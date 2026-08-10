@@ -66,7 +66,7 @@ function seedRequests() {
   const now = new Date();
   const mk = (o) => ({
     id: uid(), pemohon: "", nopek: "", telp: "", radio: "", lokasi: "", tanggal: todayISO(), jam: "",
-    barang: "", urgensi: "normal", berat: "", dimensi: "", status: "Pending",
+    barang: "", urgensi: "normal", berat: "", dimensi: "", keterangan: "", status: "Pending",
     riggers: [], jamMulai: "", jamSelesai: "", overtimeOverride: null,
     createdAt: now.toISOString(), ...o,
   });
@@ -523,6 +523,7 @@ function buildTicketHTML(r) {
     (r.berat || r.dimensi) ? ticketRowHTML("Berat / Dimensi", [r.berat, r.dimensi].filter(Boolean).join(" · ")) : "",
     ticketRowHTML("Petugas", r.riggers.length ? r.riggers.join(", ") : "-"),
     ticketRowHTML("Jam kerja", `${r.jamMulai || "--:--"} – ${r.jamSelesai || "--:--"}`),
+    r.keterangan ? ticketRowHTML("Keterangan", r.keterangan) : "",
   ].join("");
 
   const urgBadge = r.urgensi !== "normal" ? `
@@ -710,16 +711,16 @@ function RoleSwitcher({ role, setRole }) {
 /* ============================== REQUEST FORM (MA) ============================== */
 function RequestForm({ area, onSubmit }) {
   const [f, setF] = useState({
-    area, pemohon: "", nopek: "", telp: "", radio: "", lokasi: "", tanggal: todayISO(), jam: "",
-    barang: "", urgensi: "normal", berat: "", dimensi: "",
+    area, pemohon: "", nopek: "", telp: "", radio: "", lokasi: "", tanggal: todayISO(),
+    barang: "", urgensi: "normal", berat: "", dimensi: "", keterangan: "",
   });
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
-  const valid = f.pemohon && f.nopek && f.telp && f.lokasi && f.tanggal && f.barang;
+  const valid = f.pemohon && f.nopek && f.lokasi && f.tanggal && f.barang;
 
   const submit = () => {
     if (!valid) return;
     onSubmit(f);
-    setF({ area, pemohon: "", nopek: "", telp: "", radio: "", lokasi: "", tanggal: todayISO(), jam: "", barang: "", urgensi: "normal", berat: "", dimensi: "" });
+    setF({ area, pemohon: "", nopek: "", telp: "", radio: "", lokasi: "", tanggal: todayISO(), barang: "", urgensi: "normal", berat: "", dimensi: "", keterangan: "" });
   };
 
   return (
@@ -734,11 +735,11 @@ function RequestForm({ area, onSubmit }) {
         <div style={{ ...S.ticketRivet, bottom: 10, right: 10 }} />
         <div style={S.ticketHead}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#8B98A0", letterSpacing: 1 }}>PERMINTAAN / ORDER</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: "#EDEBE4", letterSpacing: 0.5 }}>Area {area}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: "#EDEBE4", letterSpacing: 0.5 }}>{areaLabel(area)}</div>
         </div>
 
         <div style={S.grid2}>
-          <Field label="Nama pemohon" required icon={User}>
+          <Field label="Nama" required icon={User}>
             <input style={S.input} value={f.pemohon} onChange={set("pemohon")} placeholder="Nama lengkap" />
           </Field>
           <Field label="No. Pegawai (NoPek)" required icon={ClipboardList}>
@@ -746,7 +747,7 @@ function RequestForm({ area, onSubmit }) {
           </Field>
         </div>
 
-        <Field label="No. Telp" required icon={PhoneCall}>
+        <Field label="No. Telp (opsional)" icon={PhoneCall}>
           <input style={S.input} value={f.telp} onChange={set("telp")} placeholder="cth. 5807" />
         </Field>
 
@@ -758,14 +759,9 @@ function RequestForm({ area, onSubmit }) {
           <input style={S.input} value={f.lokasi} onChange={set("lokasi")} placeholder="cth. CWI, Conveyor 12" />
         </Field>
 
-        <div style={S.grid2}>
-          <Field label="Tanggal diperlukan" required icon={CalendarClock}>
-            <input type="date" style={S.input} value={f.tanggal} onChange={set("tanggal")} />
-          </Field>
-          <Field label="Jam diperlukan (opsional)">
-            <input type="time" style={S.input} value={f.jam} onChange={set("jam")} />
-          </Field>
-        </div>
+        <Field label="Tanggal diperlukan" required icon={CalendarClock}>
+          <input type="date" style={S.input} value={f.tanggal} onChange={set("tanggal")} />
+        </Field>
 
         <Field label="Barang yang diangkat" required icon={Package}>
           <input style={S.input} value={f.barang} onChange={set("barang")} placeholder="cth. Motor gearbox" />
@@ -779,6 +775,10 @@ function RequestForm({ area, onSubmit }) {
             <input style={S.input} value={f.dimensi} onChange={set("dimensi")} placeholder="cth. 2 x 1 x 1 m" />
           </Field>
         </div>
+
+        <Field label="Term of Service / Penjelasan Order (opsional)" icon={ClipboardList}>
+          <textarea style={{ ...S.input, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={f.keterangan} onChange={set("keterangan")} placeholder="Penjelasan tambahan mengenai pekerjaan ini" />
+        </Field>
 
         <Field label="Tingkat urgensi" required>
           <div style={{ display: "flex", gap: 8 }}>
@@ -941,6 +941,9 @@ function RequestRow({ r, riggers, onUpdate, notify, onPrint }) {
         <div style={S.rowExpand}>
           {(r.berat || r.dimensi) && (
             <div style={S.miniMeta}>{r.berat && `Berat: ${r.berat}`}{r.berat && r.dimensi && " · "}{r.dimensi && `Dimensi: ${r.dimensi}`}</div>
+          )}
+          {r.keterangan && (
+            <div style={{ ...S.miniMeta, marginTop: 6, padding: "8px 10px", background: "#161B1E", borderRadius: 6, border: "1px solid #2A333A" }}>{r.keterangan}</div>
           )}
 
           <div style={{ marginTop: 10 }}>
