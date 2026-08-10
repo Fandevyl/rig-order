@@ -213,6 +213,11 @@ export default function App() {
     setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
 
+  const deleteRequest = (id) => {
+    setRequests((prev) => prev.filter((r) => r.id !== id));
+    notify("Permintaan dihapus");
+  };
+
   const isMA = role !== "pengawas";
 
   const NAV = isMA
@@ -295,7 +300,7 @@ export default function App() {
         {isMA && tab === "request" && <RequestForm area={role} onSubmit={addRequest} />}
         {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} />}
         {!isMA && tab !== "tim" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
-        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} onUpdate={updateRequest} notify={notify} onPrint={handlePrint} />}
+        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
         {!isMA && authed && tab === "lembur" && <Overtime requests={requests} riggers={riggers} onUpdate={updateRequest} />}
@@ -874,7 +879,7 @@ function EmptyState({ text }) {
 }
 
 /* ============================== DASHBOARD (Pengawas) ============================== */
-function Dashboard({ requests, riggers, onUpdate, notify, onPrint }) {
+function Dashboard({ requests, riggers, onUpdate, onDelete, notify, onPrint }) {
   const [filter, setFilter] = useState("Semua");
   const sorted = useMemo(() => {
     const rank = { ss: 0, darurat: 1, normal: 2 };
@@ -899,14 +904,15 @@ function Dashboard({ requests, riggers, onUpdate, notify, onPrint }) {
       {sorted.length === 0 && <EmptyState text="Tidak ada permintaan pada filter ini." />}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {sorted.map((r) => <RequestRow key={r.id} r={r} riggers={riggers} onUpdate={onUpdate} notify={notify} onPrint={onPrint} />)}
+        {sorted.map((r) => <RequestRow key={r.id} r={r} riggers={riggers} onUpdate={onUpdate} onDelete={onDelete} notify={notify} onPrint={onPrint} />)}
       </div>
     </div>
   );
 }
 
-function RequestRow({ r, riggers, onUpdate, notify, onPrint }) {
+function RequestRow({ r, riggers, onUpdate, onDelete, notify, onPrint }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const urg = URGENSI.find((u) => u.key === r.urgensi);
 
   const toggleRigger = (name) => {
@@ -980,6 +986,17 @@ function RequestRow({ r, riggers, onUpdate, notify, onPrint }) {
               </button>
             ) : (
               <span style={S.printHint}>Cetak tersedia saat status "Diproses"</span>
+            )}
+            {confirmDelete ? (
+              <div style={{ display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+                <span style={{ fontSize: 11.5, color: "#E1493F" }}>Yakin hapus?</span>
+                <button onClick={() => onDelete(r.id)} style={S.deleteConfirmBtn}>Ya, Hapus</button>
+                <button onClick={() => setConfirmDelete(false)} style={S.deleteCancelBtn}>Batal</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} style={{ ...S.deleteBtn, marginLeft: r.status === "Diproses" ? 0 : "auto" }}>
+                <Trash2 size={13} /> Hapus
+              </button>
             )}
           </div>
         </div>
@@ -1302,6 +1319,9 @@ const S = {
   statusBtnActive: { borderColor: "#F2A31B", color: "#F2A31B", background: "#F2A31B1A" },
   printBtn: { display: "flex", alignItems: "center", gap: 6, border: "1px solid #38434A", borderRadius: 7, padding: "7px 12px", fontSize: 12, color: "#8B98A0", background: "transparent", marginLeft: "auto" },
   printHint: { fontSize: 11, color: "#5C666C", marginLeft: "auto", alignSelf: "center", fontStyle: "italic" },
+  deleteBtn: { display: "flex", alignItems: "center", gap: 6, border: "1px solid #38434A", borderRadius: 7, padding: "7px 12px", fontSize: 12, color: "#8B98A0", background: "transparent" },
+  deleteConfirmBtn: { border: "1px solid #E1493F", background: "#E1493F1A", color: "#E1493F", borderRadius: 6, padding: "6px 10px", fontSize: 11.5 },
+  deleteCancelBtn: { border: "1px solid #38434A", background: "transparent", color: "#8B98A0", borderRadius: 6, padding: "6px 10px", fontSize: 11.5 },
   memberRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
   memberRemoveBtn: { background: "transparent", border: "1px solid #38434A", color: "#E1493F", borderRadius: 6, padding: "6px 8px" },
   memberRowFull: { display: "flex", alignItems: "center", gap: 12, background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
