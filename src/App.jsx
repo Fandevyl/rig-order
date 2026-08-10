@@ -138,19 +138,11 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState("request");
   const [toast, setToast] = useState(null);
+  const printRef = React.useRef(null);
 
   const handlePrint = (r) => {
-    const html = buildTicketPage(r);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `tiket-${r.id}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-    notify("Tiket terunduh — buka file itu untuk mencetak");
+    if (printRef.current) printRef.current.innerHTML = buildTicketHTML(r);
+    window.print();
   };
 
   const handleSetRole = (r) => {
@@ -311,6 +303,8 @@ export default function App() {
       </main>
 
       {toast && <div style={S.toast} className="no-print-area"><Check size={14} /> {toast}</div>}
+
+      <div className="print-ticket"><div ref={printRef} /></div>
     </div>
   );
 }
@@ -1215,6 +1209,13 @@ const globalCss = `
     .rigops-sidebar { width: 100% !important; flex-direction: row !important; align-items: center !important; padding: 12px 16px !important; overflow-x: auto; }
   }
   .print-ticket { display: none; }
+  @media print {
+    @page { size: A5; margin: 8mm; }
+    body * { visibility: hidden; }
+    .no-print-area { display: none !important; }
+    .print-ticket, .print-ticket * { visibility: visible; }
+    .print-ticket { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
+  }
 `;
 
 const S = {
