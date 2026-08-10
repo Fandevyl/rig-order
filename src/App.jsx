@@ -715,7 +715,7 @@ function RequestForm({ area, onSubmit }) {
     barang: "", urgensi: "normal", berat: "", dimensi: "", keterangan: "",
   });
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
-  const valid = f.pemohon && f.nopek && f.lokasi && f.tanggal && f.barang;
+  const valid = f.pemohon && f.nopek && f.lokasi && f.tanggal && f.barang && f.keterangan;
 
   const submit = () => {
     if (!valid) return;
@@ -776,7 +776,7 @@ function RequestForm({ area, onSubmit }) {
           </Field>
         </div>
 
-        <Field label="Term of Service / Penjelasan Order (opsional)" icon={ClipboardList}>
+        <Field label="Term of Service / Penjelasan Order" required icon={ClipboardList}>
           <textarea style={{ ...S.input, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={f.keterangan} onChange={set("keterangan")} placeholder="Penjelasan tambahan mengenai pekerjaan ini" />
         </Field>
 
