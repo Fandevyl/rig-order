@@ -22,6 +22,28 @@ const PENGAWAS_PASSWORD = "Anakketua10";
 const AREAS = ["MA1", "MA2", "MA3", "MA4", "Genmaint", "Workshop"];
 const RIGGERS_DEFAULT = ["Andi P.", "Budi S.", "Candra W.", "Dedi R.", "Eko F.", "Fajar N."];
 const KATEGORI_LIST = ["TKJP", "Pekerja Kontrak"];
+const CRITICAL_LIFT_THRESHOLD = 75; // % dari SWL
+const CHECKLIST_ITEMS = [
+  { id: "c1", label: "Alat sudah diperiksa visual, tidak ada kerusakan/retak" },
+  { id: "c2", label: "Sling / webbing / wire rope dalam kondisi baik, tidak aus/sobek" },
+  { id: "c3", label: "SWL alat sudah dikonfirmasi cukup untuk beban" },
+  { id: "c4", label: "Area kerja steril dari orang yang tidak berkepentingan" },
+  { id: "c5", label: "Rigger/operator bersertifikat (SIO) sudah standby" },
+  { id: "c6", label: "Permukaan / ground kerja stabil dan rata" },
+  { id: "c7", label: "Cuaca & kondisi lingkungan aman untuk lifting" },
+  { id: "c8", label: "Jalur lifting bebas dari halangan (kabel, pipa, dll)" },
+];
+function parseTon(text) {
+  if (!text) return "";
+  const m = String(text).match(/[\d.]+/);
+  return m ? m[0] : "";
+}
+function emptyLiftingPlan() {
+  return { alat: "", swl: "", beratBeban: "", checklist: {}, completed: false, templateUsed: "" };
+}
+function isChecklistComplete(checklist) {
+  return CHECKLIST_ITEMS.every((c) => checklist && checklist[c.id]);
+}
 function seedProfiles() {
   return {
     "Andi P.": { kategori: "TKJP" },
@@ -134,6 +156,7 @@ export default function App() {
   const [riggers, setRiggers] = useState([]);
   const [profiles, setProfiles] = useState({});
   const [gear, setGear] = useState([]);
+  const [liftingTemplates, setLiftingTemplates] = useState([]);
   const [role, setRole] = useState("pengawas"); // 'pengawas' | area name
   const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState("request");
@@ -162,6 +185,8 @@ export default function App() {
       setRiggers(rg ?? RIGGERS_DEFAULT);
       setProfiles(pf ?? seedProfiles());
       setGear(gr ?? seedGear());
+      const lt = await loadShared("rigops:lifting_templates", null);
+      setLiftingTemplates(lt ?? []);
       setReady(true);
     })();
   }, []);
@@ -181,6 +206,16 @@ export default function App() {
   useEffect(() => {
     if (ready) saveShared("rigops:gear", gear);
   }, [gear, ready]);
+
+  useEffect(() => {
+    if (ready) saveShared("rigops:lifting_templates", liftingTemplates);
+  }, [liftingTemplates, ready]);
+
+  const saveLiftingTemplate = (tpl) => {
+    setLiftingTemplates((prev) => [...prev, { ...tpl, id: uid(), createdAt: new Date().toISOString() }]);
+    notify("Template lifting plan disimpan");
+  };
+  const removeLiftingTemplate = (id) => setLiftingTemplates((prev) => prev.filter((t) => t.id !== id));
 
   const updateProfile = (name, patch) => {
     setProfiles((prev) => ({ ...prev, [name]: { ...prev[name], ...patch } }));
@@ -300,11 +335,11 @@ export default function App() {
         {isMA && tab === "request" && <RequestForm area={role} onSubmit={addRequest} />}
         {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} />}
         {!isMA && tab !== "tim" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
-        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
+        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
         {!isMA && authed && tab === "lembur" && <Overtime requests={requests} riggers={riggers} onUpdate={updateRequest} />}
-        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} notify={notify} />}
+        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} liftingTemplates={liftingTemplates} onRemoveTemplate={removeLiftingTemplate} notify={notify} />}
       </main>
 
       {toast && <div style={S.toast} className="no-print-area"><Check size={14} /> {toast}</div>}
@@ -315,7 +350,7 @@ export default function App() {
 }
 
 /* ============================== KELOLA ANGGOTA & ALAT ============================== */
-function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, notify }) {
+function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, liftingTemplates, onRemoveTemplate, notify }) {
   const [name, setName] = useState("");
   const [kategori, setKategori] = useState("TKJP");
   const [gNama, setGNama] = useState("");
@@ -425,6 +460,23 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
           </div>
         ))}
       </div>
+
+      <div style={{ ...S.sectionLabel, marginTop: 26 }}>TEMPLATE LIFTING PLAN</div>
+      {liftingTemplates.length === 0 ? (
+        <EmptyState text="Belum ada template generic lift tersimpan." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480 }}>
+          {liftingTemplates.map((t) => (
+            <div key={t.id} style={S.memberRow}>
+              <div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{t.nama}</div>
+                <div style={{ fontSize: 11, color: "#8B98A0" }}>Checklist tersimpan lengkap</div>
+              </div>
+              <button onClick={() => onRemoveTemplate(t.id)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -879,7 +931,7 @@ function EmptyState({ text }) {
 }
 
 /* ============================== DASHBOARD (Pengawas) ============================== */
-function Dashboard({ requests, riggers, onUpdate, onDelete, notify, onPrint }) {
+function Dashboard({ requests, riggers, gear, liftingTemplates, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
   const [filter, setFilter] = useState("Semua");
   const sorted = useMemo(() => {
     const rank = { ss: 0, darurat: 1, normal: 2 };
@@ -904,13 +956,16 @@ function Dashboard({ requests, riggers, onUpdate, onDelete, notify, onPrint }) {
       {sorted.length === 0 && <EmptyState text="Tidak ada permintaan pada filter ini." />}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {sorted.map((r) => <RequestRow key={r.id} r={r} riggers={riggers} onUpdate={onUpdate} onDelete={onDelete} notify={notify} onPrint={onPrint} />)}
+        {sorted.map((r) => (
+          <RequestRow key={r.id} r={r} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates}
+            onSaveTemplate={onSaveTemplate} onUpdate={onUpdate} onDelete={onDelete} notify={notify} onPrint={onPrint} />
+        ))}
       </div>
     </div>
   );
 }
 
-function RequestRow({ r, riggers, onUpdate, onDelete, notify, onPrint }) {
+function RequestRow({ r, riggers, gear, liftingTemplates, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const urg = URGENSI.find((u) => u.key === r.urgensi);
@@ -918,10 +973,15 @@ function RequestRow({ r, riggers, onUpdate, onDelete, notify, onPrint }) {
   const toggleRigger = (name) => {
     const has = r.riggers.includes(name);
     const riggers = has ? r.riggers.filter((x) => x !== name) : [...r.riggers, name];
-    onUpdate(r.id, { riggers, status: riggers.length > 0 && r.status === "Pending" ? "Diproses" : r.status });
+    const planOk = r.liftingPlan && r.liftingPlan.completed;
+    onUpdate(r.id, { riggers, status: riggers.length > 0 && r.status === "Pending" && planOk ? "Diproses" : r.status });
   };
 
   const setStatus = (status) => {
+    if (status === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed)) {
+      notify("Lengkapi Lifting Plan & checklist pre-use dulu sebelum status jadi Diproses");
+      return;
+    }
     onUpdate(r.id, { status });
     notify(`Status diubah ke "${status}"`);
   };
@@ -974,9 +1034,14 @@ function RequestRow({ r, riggers, onUpdate, onDelete, notify, onPrint }) {
             </div>
           </div>
 
+          <LiftingPlanEditor r={r} gear={gear} liftingTemplates={liftingTemplates} onSaveTemplate={onSaveTemplate}
+            onChange={(patch) => onUpdate(r.id, { liftingPlan: { ...emptyLiftingPlan(), ...r.liftingPlan, ...patch } })} />
+
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             {STATUS_FLOW.map((s) => (
-              <button key={s} onClick={() => setStatus(s)} style={{ ...S.statusBtn, ...(r.status === s ? S.statusBtnActive : {}) }}>
+              <button key={s} onClick={() => setStatus(s)} disabled={s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed)}
+                style={{ ...S.statusBtn, ...(r.status === s ? S.statusBtnActive : {}), ...(s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed) ? { opacity: 0.4, cursor: "not-allowed" } : {}) }}>
+                {s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed) && <Lock size={11} style={{ marginRight: 4, position: "relative", top: 2 }} />}
                 {s}
               </button>
             ))}
@@ -1006,6 +1071,102 @@ function RequestRow({ r, riggers, onUpdate, onDelete, notify, onPrint }) {
 }
 
 /* ============================== LAPORAN HARIAN ============================== */
+/* ============================== LIFTING PLAN ============================== */
+function LiftingPlanEditor({ r, gear, liftingTemplates, onSaveTemplate, onChange }) {
+  const plan = r.liftingPlan || emptyLiftingPlan();
+  const pct = plan.swl && plan.beratBeban ? Math.round((parseFloat(plan.beratBeban) / parseFloat(plan.swl)) * 100) : null;
+  const jenisLift = pct !== null ? (pct >= CRITICAL_LIFT_THRESHOLD ? "critical" : "generic") : null;
+  const checklistDone = isChecklistComplete(plan.checklist);
+  const dataOk = plan.alat && plan.swl && plan.beratBeban;
+  const canComplete = dataOk && checklistDone;
+
+  const setField = (patch) => {
+    const next = { ...plan, ...patch };
+    const nextComplete = !!(next.alat && next.swl && next.beratBeban && isChecklistComplete(next.checklist));
+    onChange({ ...next, completed: nextComplete });
+  };
+
+  const pickGear = (name) => {
+    const g = gear.find((x) => x.nama === name);
+    setField({ alat: name, swl: g ? parseTon(g.kapasitas) : plan.swl });
+  };
+
+  const toggleCheck = (id) => {
+    setField({ checklist: { ...plan.checklist, [id]: !plan.checklist[id] } });
+  };
+
+  const applyTemplate = (tpl) => {
+    setField({ alat: tpl.alat, swl: tpl.swl, checklist: { ...tpl.checklist }, templateUsed: tpl.nama });
+  };
+
+  const genericTemplates = liftingTemplates.filter((t) => gear.some((g) => g.nama === t.alat));
+
+  return (
+    <div style={S.lpBox}>
+      <div style={S.lpHeader}>
+        <span style={S.fieldLabel}>LIFTING PLAN</span>
+        {jenisLift && (
+          <span style={{ ...S.lpBadge, color: jenisLift === "critical" ? "#E1493F" : "#5FA980", borderColor: (jenisLift === "critical" ? "#E1493F" : "#5FA980") + "66" }}>
+            {jenisLift === "critical" ? `CRITICAL LIFT · ${pct}%` : `GENERIC LIFT · ${pct}%`}
+          </span>
+        )}
+        {plan.completed && <span style={{ ...S.lpBadge, color: "#5FA980", borderColor: "#5FA98066" }}><Check size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />Lengkap</span>}
+      </div>
+
+      {genericTemplates.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ ...S.fieldLabel, marginBottom: 4 }}>Pakai template tersimpan</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {genericTemplates.map((t) => (
+              <button key={t.id} onClick={() => applyTemplate(t)} style={S.lpTplChip}>{t.nama}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ minWidth: 180 }}>
+          <div style={S.fieldLabel}>Alat yang dipakai</div>
+          <select value={plan.alat} onChange={(e) => pickGear(e.target.value)} style={S.lpSelect}>
+            <option value="">Pilih alat...</option>
+            {gear.map((g) => <option key={g.id} value={g.nama}>{g.nama}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={S.fieldLabel}>SWL (ton)</div>
+          <input value={plan.swl} onChange={(e) => setField({ swl: e.target.value })} style={S.inputSm} placeholder="cth. 2" />
+        </div>
+        <div>
+          <div style={S.fieldLabel}>Berat beban (ton)</div>
+          <input value={plan.beratBeban} onChange={(e) => setField({ beratBeban: e.target.value })} style={S.inputSm} placeholder="cth. 1" />
+        </div>
+      </div>
+
+      <div style={S.fieldLabel}>Checklist pre-use</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, marginBottom: 10 }}>
+        {CHECKLIST_ITEMS.map((c) => (
+          <label key={c.id} style={S.lpCheckRow}>
+            <input type="checkbox" checked={!!plan.checklist[c.id]} onChange={() => toggleCheck(c.id)} style={{ marginTop: 2 }} />
+            <span>{c.label}</span>
+          </label>
+        ))}
+      </div>
+
+      {!dataOk && <div style={S.lpWarn}><AlertTriangle size={12} /> Isi alat, SWL, dan berat beban dulu.</div>}
+      {dataOk && !checklistDone && <div style={S.lpWarn}><AlertTriangle size={12} /> Semua checklist harus dicentang.</div>}
+
+      {jenisLift === "generic" && dataOk && (
+        <button
+          onClick={() => onSaveTemplate({ nama: `${plan.alat} · ${plan.swl} ton`, alat: plan.alat, swl: plan.swl, checklist: plan.checklist })}
+          style={S.lpSaveTplBtn}
+        >
+          Simpan sebagai template generic
+        </button>
+      )}
+    </div>
+  );
+}
+
 function DailyReport({ requests }) {
   const [date, setDate] = useState(todayISO());
   const items = requests.filter((r) => r.tanggal === date && (r.status === "Diproses" || r.status === "Selesai"));
@@ -1322,6 +1483,15 @@ const S = {
   deleteBtn: { display: "flex", alignItems: "center", gap: 6, border: "1px solid #38434A", borderRadius: 7, padding: "7px 12px", fontSize: 12, color: "#8B98A0", background: "transparent" },
   deleteConfirmBtn: { border: "1px solid #E1493F", background: "#E1493F1A", color: "#E1493F", borderRadius: 6, padding: "6px 10px", fontSize: 11.5 },
   deleteCancelBtn: { border: "1px solid #38434A", background: "transparent", color: "#8B98A0", borderRadius: 6, padding: "6px 10px", fontSize: 11.5 },
+
+  lpBox: { marginTop: 16, padding: "12px 14px", background: "#1A2024", borderRadius: 9, border: "1px solid #2A333A" },
+  lpHeader: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" },
+  lpBadge: { fontFamily: FONT_MONO, fontSize: 10, border: "1px solid", borderRadius: 20, padding: "2px 9px" },
+  lpTplChip: { border: "1px solid #38434A", background: "#20282D", color: "#C9D1D6", borderRadius: 20, padding: "5px 11px", fontSize: 11.5 },
+  lpSelect: { width: "100%", background: "#161B1E", border: "1px solid #2E383F", borderRadius: 6, padding: "8px 9px", color: "#EDEBE4", fontSize: 13, fontFamily: FONT_BODY },
+  lpCheckRow: { display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#C9D1D6", lineHeight: 1.3 },
+  lpWarn: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#F2A31B", marginBottom: 8 },
+  lpSaveTplBtn: { border: "1px dashed #5FA980", background: "#5FA9801A", color: "#5FA980", borderRadius: 6, padding: "7px 12px", fontSize: 11.5 },
   memberRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
   memberRemoveBtn: { background: "transparent", border: "1px solid #38434A", color: "#E1493F", borderRadius: 6, padding: "6px 8px" },
   memberRowFull: { display: "flex", alignItems: "center", gap: 12, background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
