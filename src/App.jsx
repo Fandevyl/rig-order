@@ -674,8 +674,39 @@ function BerandaMA({ requests, area }) {
   );
 }
 
+/* ============================== LIFTING PLAN — TAMPILAN PUBLIK ============================== */
+function LiftingPlanBadge({ plan }) {
+  const hasAny = plan && (plan.alat || plan.swl || plan.beratBeban);
+  if (!hasAny) return <span style={{ ...S.lpBadge, color: "#5C666C", borderColor: "#38434A" }}>Belum ada Lifting Plan</span>;
+  if (plan.completed) return <span style={{ ...S.lpBadge, color: "#5FA980", borderColor: "#5FA98066" }}><Check size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />Lifting Plan Lengkap</span>;
+  return <span style={{ ...S.lpBadge, color: "#F2A31B", borderColor: "#F2A31B66" }}><AlertTriangle size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />Lifting Plan Belum Lengkap</span>;
+}
+
+function LiftingPlanDetail({ plan }) {
+  const pct = plan.swl && plan.beratBeban ? Math.round((parseFloat(plan.beratBeban) / parseFloat(plan.swl)) * 100) : null;
+  const jenisLift = pct !== null ? (pct >= CRITICAL_LIFT_THRESHOLD ? "Critical Lift" : "Generic Lift") : null;
+  return (
+    <div style={S.lpDetailBox}>
+      <div style={S.miniMeta}>
+        {plan.alat && `Alat: ${plan.alat}`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
+        {pct !== null && ` · ${pct}% (${jenisLift})`}
+      </div>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+        {CHECKLIST_ITEMS.map((c) => (
+          <div key={c.id} style={{ display: "flex", gap: 7, fontSize: 11.5, color: plan.checklist && plan.checklist[c.id] ? "#C9D1D6" : "#5C666C" }}>
+            {plan.checklist && plan.checklist[c.id] ? <Check size={12} color="#5FA980" style={{ flexShrink: 0, marginTop: 1 }} /> : <X size={12} color="#5C666C" style={{ flexShrink: 0, marginTop: 1 }} />}
+            <span>{c.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function QueueCard({ r, queueNo, mine }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
+  const [showPlan, setShowPlan] = useState(false);
+  const plan = r.liftingPlan;
   return (
     <div style={{ ...S.miniCard, borderColor: mine ? "#F2A31B55" : "#2A333A" }}>
       {r.urgensi === "ss" && <div style={S.ssRibbon}>SS</div>}
@@ -693,6 +724,13 @@ function QueueCard({ r, queueNo, mine }) {
         </div>
         <span style={{ ...S.urgTag, color: urg.color, borderColor: urg.color + "55", flexShrink: 0 }}>{urg.label}</span>
       </div>
+      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <LiftingPlanBadge plan={plan} />
+        {plan && (plan.alat || plan.swl) && (
+          <button onClick={() => setShowPlan((s) => !s)} style={S.lpViewBtn}>{showPlan ? "Tutup" : "Lihat detail"}</button>
+        )}
+      </div>
+      {showPlan && plan && <LiftingPlanDetail plan={plan} />}
     </div>
   );
 }
@@ -904,6 +942,8 @@ function StatusList({ area, requests }) {
 
 function RequestMiniCard({ r }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
+  const [showPlan, setShowPlan] = useState(false);
+  const plan = r.liftingPlan;
   return (
     <div style={S.miniCard}>
       {r.urgensi === "ss" && <div style={S.ssRibbon}>SS</div>}
@@ -917,6 +957,13 @@ function RequestMiniCard({ r }) {
       {r.riggers.length > 0 && (
         <div style={S.miniMeta}>Petugas: {r.riggers.join(", ")}</div>
       )}
+      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <LiftingPlanBadge plan={plan} />
+        {plan && (plan.alat || plan.swl) && (
+          <button onClick={() => setShowPlan((s) => !s)} style={S.lpViewBtn}>{showPlan ? "Tutup" : "Lihat detail"}</button>
+        )}
+      </div>
+      {showPlan && plan && <LiftingPlanDetail plan={plan} />}
     </div>
   );
 }
@@ -1492,6 +1539,8 @@ const S = {
   lpCheckRow: { display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#C9D1D6", lineHeight: 1.3 },
   lpWarn: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#F2A31B", marginBottom: 8 },
   lpSaveTplBtn: { border: "1px dashed #5FA980", background: "#5FA9801A", color: "#5FA980", borderRadius: 6, padding: "7px 12px", fontSize: 11.5 },
+  lpViewBtn: { border: "1px solid #38434A", background: "transparent", color: "#8B98A0", borderRadius: 20, padding: "3px 10px", fontSize: 10.5 },
+  lpDetailBox: { marginTop: 8, padding: "10px 12px", background: "#161B1E", borderRadius: 7, border: "1px solid #2A333A" },
   memberRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
   memberRemoveBtn: { background: "transparent", border: "1px solid #38434A", color: "#E1493F", borderRadius: 6, padding: "6px 8px" },
   memberRowFull: { display: "flex", alignItems: "center", gap: 12, background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
