@@ -424,7 +424,7 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
     try {
       const url = await uploadImage(file, `${field}-${name.replace(/\s+/g, "_")}`);
       onUpdateProfile(name, { [field]: url });
-      notify(field === "foto" ? "Foto personil tersimpan" : "Foto SIO tersimpan");
+      notify(field === "foto" ? "Foto personil tersimpan" : field === "sio" ? "Foto SIO tersimpan" : "Foto Badge tersimpan");
     } catch {
       notify("Gagal mengunggah gambar");
     }
@@ -499,9 +499,12 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
                   </button>
                   <span style={S.kategoriTag}>{p.kategori || "TKJP"}</span>
                 </div>
-                <div style={{ fontSize: 11, color: "#8B98A0", marginTop: 2 }}>{p.sio ? "SIO terunggah" : "SIO belum diunggah"}</div>
+                <div style={{ fontSize: 11, color: "#8B98A0", marginTop: 2 }}>
+                  {p.sio ? "SIO terunggah" : "SIO belum diunggah"} · {p.badge ? "Badge terunggah" : "Badge belum diunggah"}
+                </div>
               </div>
               <PhotoUpload label="SIO" src={p.sio} onFile={(f) => uploadFor(r, "sio", f)} />
+              <PhotoUpload label="Badge" src={p.badge} onFile={(f) => uploadFor(r, "badge", f)} />
               <button onClick={() => onRemove(r)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
             </div>
           );
@@ -707,6 +710,11 @@ function TeamAndGear({ riggers, profiles, gear }) {
                 <button style={S.sioBtn} onClick={() => setZoom(p.sio)}>Lihat SIO</button>
               ) : (
                 <div style={{ fontSize: 10, color: "#5C666C", marginTop: 6 }}>SIO belum ada</div>
+              )}
+              {p.badge ? (
+                <button style={{ ...S.sioBtn, marginTop: 6 }} onClick={() => setZoom(p.badge)}>Lihat Badge</button>
+              ) : (
+                <div style={{ fontSize: 10, color: "#5C666C", marginTop: 6 }}>Badge belum ada</div>
               )}
             </div>
           );
