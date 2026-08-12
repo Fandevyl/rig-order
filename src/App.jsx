@@ -543,6 +543,8 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
   const [expanded, setExpanded] = useState(false);
   const [radius, setRadius] = useState("");
   const [kap, setKap] = useState("");
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const chart = g.loadChart || [];
 
   const addPoint = () => {
@@ -552,6 +554,24 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
     setRadius(""); setKap("");
   };
   const removePoint = (idx) => onUpdateGear(g.id, { loadChart: chart.filter((_, i) => i !== idx) });
+
+  const importBulk = () => {
+    const lines = bulkText.split("\n").map((l) => l.trim()).filter(Boolean);
+    const points = [];
+    for (const line of lines) {
+      const parts = line.split(/[,;\t]+|\s+/).map((s) => s.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        const rad = parseFloat(parts[0].replace(",", "."));
+        const kapVal = parseFloat(parts[1].replace(",", "."));
+        if (!isNaN(rad) && !isNaN(kapVal)) points.push({ radius: String(rad), kapasitas: String(kapVal) });
+      }
+    }
+    if (points.length === 0) return;
+    const merged = [...chart, ...points].sort((a, b) => parseFloat(a.radius) - parseFloat(b.radius));
+    onUpdateGear(g.id, { loadChart: merged });
+    setBulkText("");
+    setShowBulk(false);
+  };
 
   return (
     <div style={S.gearRowWrap}>
@@ -583,7 +603,7 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
               ))}
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
             <div>
               <div style={S.fieldLabel}>Radius (m)</div>
               <input value={radius} onChange={(e) => setRadius(e.target.value)} style={{ ...S.inputSm, width: 90 }} placeholder="cth. 5" />
@@ -594,6 +614,23 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
             </div>
             <button onClick={addPoint} style={{ ...S.submitBtn, width: "auto", padding: "9px 14px", marginTop: 0 }}><Plus size={14} /></button>
           </div>
+
+          <button onClick={() => setShowBulk((s) => !s)} style={S.lpViewBtn}>{showBulk ? "Tutup import massal" : "Import banyak sekaligus"}</button>
+          {showBulk && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: "#5C666C", marginBottom: 6 }}>
+                Tempel daftar radius & kapasitas, satu baris per titik. Boleh dipisah koma, spasi, atau tab (langsung dari copy tabel) — contoh:{" "}
+                <span style={{ fontFamily: FONT_MONO }}>3, 8</span> lalu baris baru <span style={{ fontFamily: FONT_MONO }}>4, 7</span>
+              </div>
+              <textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: FONT_MONO, fontSize: 12.5 }}
+                placeholder={"3, 8\n4, 7\n5, 6\n6, 5"}
+              />
+              <button onClick={importBulk} style={{ ...S.submitBtn, width: "auto", padding: "9px 16px", marginTop: 8 }}>Import ke Load Chart</button>
+            </div>
+          )}
         </div>
       )}
     </div>
