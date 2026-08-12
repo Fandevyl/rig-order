@@ -39,13 +39,31 @@ function parseTon(text) {
   return m ? m[0] : "";
 }
 function emptyLiftingPlan() {
-  return { alat: "", swl: "", beratBeban: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
+  return { alat: "", swl: "", beratBeban: "", radius: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
 }
 function isChecklistComplete(checklist) {
   return CHECKLIST_ITEMS.every((c) => checklist && checklist[c.id]);
 }
 function libKey(barang, lokasi) {
   return `${(barang || "").trim().toLowerCase()}|${(lokasi || "").trim().toLowerCase()}`;
+}
+function interpolateLoadChart(chart, radius) {
+  if (!chart || chart.length === 0) return null;
+  const sorted = [...chart].map((p) => ({ radius: parseFloat(p.radius), kapasitas: parseFloat(p.kapasitas) })).sort((a, b) => a.radius - b.radius);
+  const r = parseFloat(radius);
+  if (isNaN(r) || sorted.length === 0) return null;
+  const first = sorted[0], last = sorted[sorted.length - 1];
+  if (r <= first.radius) return { value: first.kapasitas, outOfRange: r < first.radius };
+  if (r >= last.radius) return { value: last.kapasitas, outOfRange: r > last.radius };
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const a = sorted[i], b = sorted[i + 1];
+    if (r >= a.radius && r <= b.radius) {
+      const t = (r - a.radius) / (b.radius - a.radius || 1);
+      const val = a.kapasitas + t * (b.kapasitas - a.kapasitas);
+      return { value: Math.round(val * 100) / 100, outOfRange: false, a, b };
+    }
+  }
+  return null;
 }
 function seedProfiles() {
   return {
@@ -246,6 +264,7 @@ export default function App() {
   const addGear = (item) => setGear((prev) => [...prev, { ...item, id: uid() }]);
   const removeGear = (id) => setGear((prev) => prev.filter((g) => g.id !== id));
   const toggleGearKondisi = (id) => setGear((prev) => prev.map((g) => g.id === id ? { ...g, kondisi: g.kondisi === "Baik" ? "Rusak" : "Baik" } : g));
+  const updateGear = (id, patch) => setGear((prev) => prev.map((g) => g.id === id ? { ...g, ...patch } : g));
 
   const addRigger = (name, kategori) => {
     const trimmed = name.trim();
@@ -273,7 +292,7 @@ export default function App() {
       const lp = patch.liftingPlan;
       const req = requests.find((r) => r.id === id);
       if (req && lp.alat && lp.swl && lp.beratBeban) {
-        upsertLiftingLibrary(req.barang, req.lokasi, { alat: lp.alat, swl: lp.swl, beratBeban: lp.beratBeban, kode: lp.kodeBarang || "" });
+        upsertLiftingLibrary(req.barang, req.lokasi, { alat: lp.alat, swl: lp.swl, beratBeban: lp.beratBeban, radius: lp.radius || "", kode: lp.kodeBarang || "" });
       }
     }
   };
@@ -369,7 +388,7 @@ export default function App() {
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
         {!isMA && authed && tab === "lembur" && <Overtime requests={requests} riggers={riggers} onUpdate={updateRequest} />}
-        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} liftingTemplates={liftingTemplates} onRemoveTemplate={removeLiftingTemplate} liftingLibrary={liftingLibrary} onRemoveLibrary={removeLiftingLibraryEntry} notify={notify} />}
+        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} onUpdateGear={updateGear} liftingTemplates={liftingTemplates} onRemoveTemplate={removeLiftingTemplate} liftingLibrary={liftingLibrary} onRemoveLibrary={removeLiftingLibraryEntry} notify={notify} />}
       </main>
 
       {toast && <div style={S.toast} className="no-print-area"><Check size={14} /> {toast}</div>}
@@ -380,7 +399,7 @@ export default function App() {
 }
 
 /* ============================== KELOLA ANGGOTA & ALAT ============================== */
-function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, liftingTemplates, onRemoveTemplate, liftingLibrary, onRemoveLibrary, notify }) {
+function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, onUpdateGear, liftingTemplates, onRemoveTemplate, liftingLibrary, onRemoveLibrary, notify }) {
   const [name, setName] = useState("");
   const [kategori, setKategori] = useState("TKJP");
   const [gNama, setGNama] = useState("");
@@ -401,11 +420,11 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
   const uploadFor = async (name, field, file) => {
     if (!file) return;
     try {
-      const url = await uploadImage(file, `${field}-${name.replace(/\s+/g, "_")}`);
-      onUpdateProfile(name, { [field]: url });
+      const dataUrl = await compressImage(file);
+      onUpdateProfile(name, { [field]: dataUrl });
       notify(field === "foto" ? "Foto personil tersimpan" : "Foto SIO tersimpan");
     } catch {
-      notify("Gagal mengunggah gambar");
+      notify("Gagal memproses gambar");
     }
   };
 
@@ -474,20 +493,9 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
 
       {gear.length === 0 && <EmptyState text="Belum ada alat terdaftar." />}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 520 }}>
         {gear.map((g) => (
-          <div key={g.id} style={S.memberRow}>
-            <div>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
-              <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}</div>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button onClick={() => onToggleGear(g.id)} style={{ ...S.gearKondisi, color: g.kondisi === "Baik" ? "#5FA980" : "#E1493F", borderColor: (g.kondisi === "Baik" ? "#5FA980" : "#E1493F") + "55" }}>
-                {g.kondisi}
-              </button>
-              <button onClick={() => onRemoveGear(g.id)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
-            </div>
-          </div>
+          <GearRow key={g.id} g={g} onToggleGear={onToggleGear} onRemoveGear={onRemoveGear} onUpdateGear={onUpdateGear} />
         ))}
       </div>
 
@@ -524,6 +532,68 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
               <button onClick={() => onRemoveLibrary(e.key)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================== GEAR ROW + LOAD CHART ============================== */
+function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
+  const [expanded, setExpanded] = useState(false);
+  const [radius, setRadius] = useState("");
+  const [kap, setKap] = useState("");
+  const chart = g.loadChart || [];
+
+  const addPoint = () => {
+    if (!radius || !kap) return;
+    const next = [...chart, { radius, kapasitas: kap }].sort((a, b) => parseFloat(a.radius) - parseFloat(b.radius));
+    onUpdateGear(g.id, { loadChart: next });
+    setRadius(""); setKap("");
+  };
+  const removePoint = (idx) => onUpdateGear(g.id, { loadChart: chart.filter((_, i) => i !== idx) });
+
+  return (
+    <div style={S.gearRowWrap}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
+          <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}{chart.length > 0 ? ` · Load chart: ${chart.length} titik` : ""}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => setExpanded((e) => !e)} style={S.lpViewBtn}>{expanded ? "Tutup" : "Load Chart"}</button>
+          <button onClick={() => onToggleGear(g.id)} style={{ ...S.gearKondisi, color: g.kondisi === "Baik" ? "#5FA980" : "#E1493F", borderColor: (g.kondisi === "Baik" ? "#5FA980" : "#E1493F") + "55" }}>
+            {g.kondisi}
+          </button>
+          <button onClick={() => onRemoveGear(g.id)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2A333A" }}>
+          <div style={{ ...S.fieldLabel, marginBottom: 6 }}>Load chart (radius vs kapasitas) — untuk crane</div>
+          {chart.length === 0 && <div style={{ fontSize: 11.5, color: "#5C666C", marginBottom: 8 }}>Belum ada titik chart. Kalau alat ini bukan crane, boleh dibiarkan kosong (pakai kapasitas tetap).</div>}
+          {chart.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {chart.map((p, i) => (
+                <div key={i} style={S.lpChartRow}>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#C9D1D6" }}>Radius {p.radius} m → {p.kapasitas} ton</span>
+                  <button onClick={() => removePoint(i)} style={S.memberRemoveBtn}><X size={11} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div>
+              <div style={S.fieldLabel}>Radius (m)</div>
+              <input value={radius} onChange={(e) => setRadius(e.target.value)} style={{ ...S.inputSm, width: 90 }} placeholder="cth. 5" />
+            </div>
+            <div>
+              <div style={S.fieldLabel}>Kapasitas (ton)</div>
+              <input value={kap} onChange={(e) => setKap(e.target.value)} style={{ ...S.inputSm, width: 90 }} placeholder="cth. 5.5" />
+            </div>
+            <button onClick={addPoint} style={{ ...S.submitBtn, width: "auto", padding: "9px 14px", marginTop: 0 }}><Plus size={14} /></button>
+          </div>
         </div>
       )}
     </div>
@@ -737,7 +807,7 @@ function LiftingPlanDetail({ plan }) {
   return (
     <div style={S.lpDetailBox}>
       <div style={S.miniMeta}>
-        {plan.kodeBarang && `Kode: ${plan.kodeBarang} · `}{plan.alat && `Alat: ${plan.alat}`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
+        {plan.kodeBarang && `Kode: ${plan.kodeBarang} · `}{plan.alat && `Alat: ${plan.alat}`}{plan.radius && ` · Radius: ${plan.radius} m`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
         {pct !== null && ` · ${pct}% (${jenisLift})`}
       </div>
       <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1177,10 +1247,13 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
   const canComplete = dataOk && checklistDone;
 
   const libEntry = useMemo(() => liftingLibrary.find((e) => e.key === libKey(r.barang, r.lokasi)), [liftingLibrary, r.barang, r.lokasi]);
+  const selectedGear = gear.find((x) => x.nama === plan.alat);
+  const hasChart = !!(selectedGear && selectedGear.loadChart && selectedGear.loadChart.length > 0);
+  const chartResult = hasChart && plan.radius ? interpolateLoadChart(selectedGear.loadChart, plan.radius) : null;
 
   useEffect(() => {
     if (!plan.alat && !plan.swl && !plan.beratBeban && libEntry) {
-      onChange({ alat: libEntry.alat, swl: libEntry.swl, beratBeban: libEntry.beratBeban, kodeBarang: libEntry.kode || "" });
+      onChange({ alat: libEntry.alat, swl: libEntry.swl, beratBeban: libEntry.beratBeban, radius: libEntry.radius || "", kodeBarang: libEntry.kode || "" });
       notify(`Data "${r.barang}" di "${r.lokasi}" otomatis terisi dari riwayat sebelumnya`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1194,7 +1267,13 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
 
   const pickGear = (name) => {
     const g = gear.find((x) => x.nama === name);
-    setField({ alat: name, swl: g ? parseTon(g.kapasitas) : plan.swl });
+    const gHasChart = !!(g && g.loadChart && g.loadChart.length > 0);
+    setField({ alat: name, radius: "", swl: gHasChart ? "" : (g ? parseTon(g.kapasitas) : plan.swl) });
+  };
+
+  const setRadius = (val) => {
+    const result = hasChart ? interpolateLoadChart(selectedGear.loadChart, val) : null;
+    setField({ radius: val, swl: result ? String(result.value) : "" });
   };
 
   const toggleCheck = (id) => {
@@ -1202,7 +1281,7 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
   };
 
   const applyTemplate = (tpl) => {
-    setField({ alat: tpl.alat, swl: tpl.swl, checklist: { ...tpl.checklist }, templateUsed: tpl.nama });
+    setField({ alat: tpl.alat, swl: tpl.swl, radius: tpl.radius || "", checklist: { ...tpl.checklist }, templateUsed: tpl.nama });
   };
 
   const genericTemplates = liftingTemplates.filter((t) => gear.some((g) => g.nama === t.alat));
@@ -1233,7 +1312,7 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
       {libEntry && (
         <div style={S.lpLibNote}>
           <Check size={12} color="#5FA980" style={{ flexShrink: 0 }} />
-          Data "{r.barang}" di "{r.lokasi}" sudah pernah tercatat{libEntry.kode ? ` (Kode: ${libEntry.kode})` : ""}: {libEntry.alat} · SWL {libEntry.swl} ton · Beban {libEntry.beratBeban} ton
+          Data "{r.barang}" di "{r.lokasi}" sudah pernah tercatat{libEntry.kode ? ` (Kode: ${libEntry.kode})` : ""}: {libEntry.alat}{libEntry.radius ? ` · Radius ${libEntry.radius} m` : ""} · SWL {libEntry.swl} ton · Beban {libEntry.beratBeban} ton
         </div>
       )}
 
@@ -1251,14 +1330,32 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
           </select>
         </div>
         <div>
-          <div style={S.fieldLabel}>SWL (ton)</div>
-          <input value={plan.swl} onChange={(e) => setField({ swl: e.target.value })} style={S.inputSm} placeholder="cth. 2" />
+          {hasChart ? (
+            <>
+              <div style={S.fieldLabel}>Radius kerja (m)</div>
+              <input value={plan.radius} onChange={(e) => setRadius(e.target.value)} style={S.inputSm} placeholder="cth. 6" />
+            </>
+          ) : (
+            <>
+              <div style={S.fieldLabel}>SWL (ton)</div>
+              <input value={plan.swl} onChange={(e) => setField({ swl: e.target.value })} style={S.inputSm} placeholder="cth. 2" />
+            </>
+          )}
         </div>
         <div>
           <div style={S.fieldLabel}>Berat beban (ton)</div>
           <input value={plan.beratBeban} onChange={(e) => setField({ beratBeban: e.target.value })} style={S.inputSm} placeholder="cth. 1" />
         </div>
       </div>
+
+      {hasChart && plan.radius && (
+        <div style={{ ...S.lpLibNote, color: chartResult && chartResult.outOfRange ? "#E1493F" : "#5FA980", background: chartResult && chartResult.outOfRange ? "#E1493F0F" : "#5FA9800F", borderColor: chartResult && chartResult.outOfRange ? "#E1493F33" : "#5FA98033" }}>
+          {chartResult && chartResult.outOfRange ? <AlertTriangle size={12} style={{ flexShrink: 0 }} /> : <Check size={12} color="#5FA980" style={{ flexShrink: 0 }} />}
+          {chartResult
+            ? `SWL otomatis dari load chart pada radius ${plan.radius} m: ${chartResult.value} ton${chartResult.outOfRange ? " — di luar jangkauan chart, gunakan dengan hati-hati" : ""}`
+            : "Radius di luar data load chart"}
+        </div>
+      )}
 
       <div style={S.fieldLabel}>Checklist pre-use</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, marginBottom: 10 }}>
@@ -1616,6 +1713,8 @@ const S = {
   memberRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
   memberRemoveBtn: { background: "transparent", border: "1px solid #38434A", color: "#E1493F", borderRadius: 6, padding: "6px 8px" },
   memberRowFull: { display: "flex", alignItems: "center", gap: 12, background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
+  gearRowWrap: { background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
+  lpChartRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#161B1E", borderRadius: 5, padding: "5px 10px" },
   sectionLabel: { fontFamily: FONT_MONO, fontSize: 11.5, letterSpacing: 1.2, color: "#F2A31B", marginBottom: 10 },
   kategoriTag: { fontSize: 10, fontFamily: FONT_MONO, color: "#8B98A0", border: "1px solid #38434A", borderRadius: 20, padding: "1.5px 8px", display: "inline-block" },
   photoBox: { width: 40, height: 40, border: "1px dashed #38434A", background: "#161B1E center/cover no-repeat", backgroundSize: "cover", backgroundPosition: "center", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
