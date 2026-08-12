@@ -420,11 +420,11 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
   const uploadFor = async (name, field, file) => {
     if (!file) return;
     try {
-      const dataUrl = await compressImage(file);
-      onUpdateProfile(name, { [field]: dataUrl });
+      const url = await uploadImage(file, `${field}-${name.replace(/\s+/g, "_")}`);
+      onUpdateProfile(name, { [field]: url });
       notify(field === "foto" ? "Foto personil tersimpan" : "Foto SIO tersimpan");
     } catch {
-      notify("Gagal memproses gambar");
+      notify("Gagal mengunggah gambar");
     }
   };
 
