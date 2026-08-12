@@ -39,10 +39,13 @@ function parseTon(text) {
   return m ? m[0] : "";
 }
 function emptyLiftingPlan() {
-  return { alat: "", swl: "", beratBeban: "", checklist: {}, completed: false, templateUsed: "" };
+  return { alat: "", swl: "", beratBeban: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
 }
 function isChecklistComplete(checklist) {
   return CHECKLIST_ITEMS.every((c) => checklist && checklist[c.id]);
+}
+function libKey(barang, lokasi) {
+  return `${(barang || "").trim().toLowerCase()}|${(lokasi || "").trim().toLowerCase()}`;
 }
 function seedProfiles() {
   return {
@@ -157,6 +160,7 @@ export default function App() {
   const [profiles, setProfiles] = useState({});
   const [gear, setGear] = useState([]);
   const [liftingTemplates, setLiftingTemplates] = useState([]);
+  const [liftingLibrary, setLiftingLibrary] = useState([]);
   const [role, setRole] = useState("pengawas"); // 'pengawas' | area name
   const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState("request");
@@ -187,6 +191,8 @@ export default function App() {
       setGear(gr ?? seedGear());
       const lt = await loadShared("rigops:lifting_templates", null);
       setLiftingTemplates(lt ?? []);
+      const ll = await loadShared("rigops:lifting_library", null);
+      setLiftingLibrary(ll ?? []);
       setReady(true);
     })();
   }, []);
@@ -211,11 +217,28 @@ export default function App() {
     if (ready) saveShared("rigops:lifting_templates", liftingTemplates);
   }, [liftingTemplates, ready]);
 
+  useEffect(() => {
+    if (ready) saveShared("rigops:lifting_library", liftingLibrary);
+  }, [liftingLibrary, ready]);
+
+  const upsertLiftingLibrary = (barang, lokasi, data) => {
+    const key = libKey(barang, lokasi);
+    setLiftingLibrary((prev) => {
+      const idx = prev.findIndex((e) => e.key === key);
+      const entry = { key, barang, lokasi, ...data, updatedAt: new Date().toISOString() };
+      if (idx === -1) return [...prev, entry];
+      const next = [...prev];
+      next[idx] = entry;
+      return next;
+    });
+  };
+
   const saveLiftingTemplate = (tpl) => {
     setLiftingTemplates((prev) => [...prev, { ...tpl, id: uid(), createdAt: new Date().toISOString() }]);
     notify("Template lifting plan disimpan");
   };
   const removeLiftingTemplate = (id) => setLiftingTemplates((prev) => prev.filter((t) => t.id !== id));
+  const removeLiftingLibraryEntry = (key) => setLiftingLibrary((prev) => prev.filter((e) => e.key !== key));
 
   const updateProfile = (name, patch) => {
     setProfiles((prev) => ({ ...prev, [name]: { ...prev[name], ...patch } }));
@@ -246,6 +269,13 @@ export default function App() {
 
   const updateRequest = (id, patch) => {
     setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    if (patch.liftingPlan) {
+      const lp = patch.liftingPlan;
+      const req = requests.find((r) => r.id === id);
+      if (req && lp.alat && lp.swl && lp.beratBeban) {
+        upsertLiftingLibrary(req.barang, req.lokasi, { alat: lp.alat, swl: lp.swl, beratBeban: lp.beratBeban, kode: lp.kodeBarang || "" });
+      }
+    }
   };
 
   const deleteRequest = (id) => {
@@ -335,11 +365,11 @@ export default function App() {
         {isMA && tab === "request" && <RequestForm area={role} onSubmit={addRequest} />}
         {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} />}
         {!isMA && tab !== "tim" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
-        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
+        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
         {!isMA && authed && tab === "lembur" && <Overtime requests={requests} riggers={riggers} onUpdate={updateRequest} />}
-        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} liftingTemplates={liftingTemplates} onRemoveTemplate={removeLiftingTemplate} notify={notify} />}
+        {!isMA && authed && tab === "anggota" && <AnggotaManager riggers={riggers} profiles={profiles} onAdd={addRigger} onRemove={removeRigger} onUpdateProfile={updateProfile} gear={gear} onAddGear={addGear} onRemoveGear={removeGear} onToggleGear={toggleGearKondisi} liftingTemplates={liftingTemplates} onRemoveTemplate={removeLiftingTemplate} liftingLibrary={liftingLibrary} onRemoveLibrary={removeLiftingLibraryEntry} notify={notify} />}
       </main>
 
       {toast && <div style={S.toast} className="no-print-area"><Check size={14} /> {toast}</div>}
@@ -350,7 +380,7 @@ export default function App() {
 }
 
 /* ============================== KELOLA ANGGOTA & ALAT ============================== */
-function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, liftingTemplates, onRemoveTemplate, notify }) {
+function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, liftingTemplates, onRemoveTemplate, liftingLibrary, onRemoveLibrary, notify }) {
   const [name, setName] = useState("");
   const [kategori, setKategori] = useState("TKJP");
   const [gNama, setGNama] = useState("");
@@ -473,6 +503,25 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
                 <div style={{ fontSize: 11, color: "#8B98A0" }}>Checklist tersimpan lengkap</div>
               </div>
               <button onClick={() => onRemoveTemplate(t.id)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ ...S.sectionLabel, marginTop: 26 }}>DATABASE BARANG</div>
+      {liftingLibrary.length === 0 ? (
+        <EmptyState text="Belum ada data barang tersimpan. Data otomatis terisi begitu Lifting Plan sebuah barang lengkap diisi." />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 560 }}>
+          {liftingLibrary.map((e) => (
+            <div key={e.key} style={S.memberRow}>
+              <div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>
+                  {e.barang} {e.kode && <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#F2A31B" }}>· {e.kode}</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "#8B98A0" }}>{e.lokasi} · {e.alat} · SWL {e.swl} ton · Berat {e.beratBeban} ton</div>
+              </div>
+              <button onClick={() => onRemoveLibrary(e.key)} style={S.memberRemoveBtn}><Trash2 size={13} /></button>
             </div>
           ))}
         </div>
@@ -688,7 +737,7 @@ function LiftingPlanDetail({ plan }) {
   return (
     <div style={S.lpDetailBox}>
       <div style={S.miniMeta}>
-        {plan.alat && `Alat: ${plan.alat}`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
+        {plan.kodeBarang && `Kode: ${plan.kodeBarang} · `}{plan.alat && `Alat: ${plan.alat}`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
         {pct !== null && ` · ${pct}% (${jenisLift})`}
       </div>
       <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -978,7 +1027,7 @@ function EmptyState({ text }) {
 }
 
 /* ============================== DASHBOARD (Pengawas) ============================== */
-function Dashboard({ requests, riggers, gear, liftingTemplates, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
+function Dashboard({ requests, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
   const [filter, setFilter] = useState("Semua");
   const sorted = useMemo(() => {
     const rank = { ss: 0, darurat: 1, normal: 2 };
@@ -1004,7 +1053,7 @@ function Dashboard({ requests, riggers, gear, liftingTemplates, onSaveTemplate, 
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {sorted.map((r) => (
-          <RequestRow key={r.id} r={r} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates}
+          <RequestRow key={r.id} r={r} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary}
             onSaveTemplate={onSaveTemplate} onUpdate={onUpdate} onDelete={onDelete} notify={notify} onPrint={onPrint} />
         ))}
       </div>
@@ -1012,7 +1061,7 @@ function Dashboard({ requests, riggers, gear, liftingTemplates, onSaveTemplate, 
   );
 }
 
-function RequestRow({ r, riggers, gear, liftingTemplates, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
+function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const urg = URGENSI.find((u) => u.key === r.urgensi);
@@ -1081,7 +1130,7 @@ function RequestRow({ r, riggers, gear, liftingTemplates, onSaveTemplate, onUpda
             </div>
           </div>
 
-          <LiftingPlanEditor r={r} gear={gear} liftingTemplates={liftingTemplates} onSaveTemplate={onSaveTemplate}
+          <LiftingPlanEditor r={r} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={onSaveTemplate} notify={notify}
             onChange={(patch) => onUpdate(r.id, { liftingPlan: { ...emptyLiftingPlan(), ...r.liftingPlan, ...patch } })} />
 
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
@@ -1119,13 +1168,23 @@ function RequestRow({ r, riggers, gear, liftingTemplates, onSaveTemplate, onUpda
 
 /* ============================== LAPORAN HARIAN ============================== */
 /* ============================== LIFTING PLAN ============================== */
-function LiftingPlanEditor({ r, gear, liftingTemplates, onSaveTemplate, onChange }) {
+function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTemplate, notify, onChange }) {
   const plan = r.liftingPlan || emptyLiftingPlan();
   const pct = plan.swl && plan.beratBeban ? Math.round((parseFloat(plan.beratBeban) / parseFloat(plan.swl)) * 100) : null;
   const jenisLift = pct !== null ? (pct >= CRITICAL_LIFT_THRESHOLD ? "critical" : "generic") : null;
   const checklistDone = isChecklistComplete(plan.checklist);
   const dataOk = plan.alat && plan.swl && plan.beratBeban;
   const canComplete = dataOk && checklistDone;
+
+  const libEntry = useMemo(() => liftingLibrary.find((e) => e.key === libKey(r.barang, r.lokasi)), [liftingLibrary, r.barang, r.lokasi]);
+
+  useEffect(() => {
+    if (!plan.alat && !plan.swl && !plan.beratBeban && libEntry) {
+      onChange({ alat: libEntry.alat, swl: libEntry.swl, beratBeban: libEntry.beratBeban, kodeBarang: libEntry.kode || "" });
+      notify(`Data "${r.barang}" di "${r.lokasi}" otomatis terisi dari riwayat sebelumnya`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setField = (patch) => {
     const next = { ...plan, ...patch };
@@ -1170,6 +1229,18 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, onSaveTemplate, onChange
           </div>
         </div>
       )}
+
+      {libEntry && (
+        <div style={S.lpLibNote}>
+          <Check size={12} color="#5FA980" style={{ flexShrink: 0 }} />
+          Data "{r.barang}" di "{r.lokasi}" sudah pernah tercatat{libEntry.kode ? ` (Kode: ${libEntry.kode})` : ""}: {libEntry.alat} · SWL {libEntry.swl} ton · Beban {libEntry.beratBeban} ton
+        </div>
+      )}
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={S.fieldLabel}>Kode Barang (opsional)</div>
+        <input value={plan.kodeBarang} onChange={(e) => setField({ kodeBarang: e.target.value })} style={{ ...S.inputSm, width: 160 }} placeholder="cth. G-2-08 A" />
+      </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
         <div style={{ minWidth: 180 }}>
@@ -1541,6 +1612,7 @@ const S = {
   lpSaveTplBtn: { border: "1px dashed #5FA980", background: "#5FA9801A", color: "#5FA980", borderRadius: 6, padding: "7px 12px", fontSize: 11.5 },
   lpViewBtn: { border: "1px solid #38434A", background: "transparent", color: "#8B98A0", borderRadius: 20, padding: "3px 10px", fontSize: 10.5 },
   lpDetailBox: { marginTop: 8, padding: "10px 12px", background: "#161B1E", borderRadius: 7, border: "1px solid #2A333A" },
+  lpLibNote: { display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11.5, color: "#5FA980", background: "#5FA9800F", border: "1px solid #5FA98033", borderRadius: 6, padding: "8px 10px", marginBottom: 10 },
   memberRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
   memberRemoveBtn: { background: "transparent", border: "1px solid #38434A", color: "#E1493F", borderRadius: 6, padding: "6px 8px" },
   memberRowFull: { display: "flex", alignItems: "center", gap: 12, background: "#1F262A", border: "1px solid #2A333A", borderRadius: 8, padding: "10px 14px" },
