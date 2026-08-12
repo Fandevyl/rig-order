@@ -22,6 +22,7 @@ const PENGAWAS_PASSWORD = "Anakketua10";
 const AREAS = ["MA1", "MA2", "MA3", "MA4", "Genmaint", "Workshop"];
 const RIGGERS_DEFAULT = ["Andi P.", "Budi S.", "Candra W.", "Dedi R.", "Eko F.", "Fajar N."];
 const KATEGORI_LIST = ["TKJP", "Pekerja Kontrak"];
+const POSISI_LIST = ["Rigger", "Operator Crane", "Operator Forklift"];
 const CRITICAL_LIFT_THRESHOLD = 75; // % dari SWL
 const CHECKLIST_ITEMS = [
   { id: "c1", label: "Alat sudah diperiksa visual, tidak ada kerusakan/retak" },
@@ -67,12 +68,12 @@ function interpolateLoadChart(chart, radius) {
 }
 function seedProfiles() {
   return {
-    "Andi P.": { kategori: "TKJP" },
-    "Budi S.": { kategori: "TKJP" },
-    "Candra W.": { kategori: "Pekerja Kontrak" },
-    "Dedi R.": { kategori: "TKJP" },
-    "Eko F.": { kategori: "Pekerja Kontrak" },
-    "Fajar N.": { kategori: "Pekerja Kontrak" },
+    "Andi P.": { kategori: "TKJP", posisi: "Rigger" },
+    "Budi S.": { kategori: "TKJP", posisi: "Rigger" },
+    "Candra W.": { kategori: "Pekerja Kontrak", posisi: "Operator Crane" },
+    "Dedi R.": { kategori: "TKJP", posisi: "Rigger" },
+    "Eko F.": { kategori: "Pekerja Kontrak", posisi: "Operator Forklift" },
+    "Fajar N.": { kategori: "Pekerja Kontrak", posisi: "Rigger" },
   };
 }
 function seedGear() {
@@ -266,11 +267,11 @@ export default function App() {
   const toggleGearKondisi = (id) => setGear((prev) => prev.map((g) => g.id === id ? { ...g, kondisi: g.kondisi === "Baik" ? "Rusak" : "Baik" } : g));
   const updateGear = (id, patch) => setGear((prev) => prev.map((g) => g.id === id ? { ...g, ...patch } : g));
 
-  const addRigger = (name, kategori) => {
+  const addRigger = (name, kategori, posisi) => {
     const trimmed = name.trim();
     if (!trimmed || riggers.includes(trimmed)) return;
     setRiggers((prev) => [...prev, trimmed]);
-    setProfiles((prev) => ({ ...prev, [trimmed]: { ...prev[trimmed], kategori: kategori || "TKJP" } }));
+    setProfiles((prev) => ({ ...prev, [trimmed]: { ...prev[trimmed], kategori: kategori || "TKJP", posisi: posisi || "Rigger" } }));
   };
   const removeRigger = (name) => {
     setRiggers((prev) => prev.filter((n) => n !== name));
@@ -402,12 +403,13 @@ export default function App() {
 function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, gear, onAddGear, onRemoveGear, onToggleGear, onUpdateGear, liftingTemplates, onRemoveTemplate, liftingLibrary, onRemoveLibrary, notify }) {
   const [name, setName] = useState("");
   const [kategori, setKategori] = useState("TKJP");
+  const [posisi, setPosisi] = useState("Rigger");
   const [gNama, setGNama] = useState("");
   const [gKap, setGKap] = useState("");
 
   const submitRigger = () => {
     if (!name.trim()) return;
-    onAdd(name, kategori);
+    onAdd(name, kategori, posisi);
     setName("");
   };
 
@@ -433,7 +435,7 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
       <PageHeader eyebrow="PENGAWAS" title="Kelola Anggota & Alat" desc="Tambah anggota, unggah foto & SIO, dan kelola daftar lifting gear." />
 
       {/* Anggota */}
-      <div style={S.sectionLabel}>ANGGOTA RIGGER</div>
+      <div style={S.sectionLabel}>ANGGOTA TIM</div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, maxWidth: 380 }}>
         <input
           style={S.input}
@@ -446,17 +448,35 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
           <Plus size={15} />
         </button>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {KATEGORI_LIST.map((k) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setKategori(k)}
-            style={{ ...S.urgChip, borderColor: kategori === k ? "#F2A31B" : "#38434A", color: kategori === k ? "#F2A31B" : "#8B98A0", background: kategori === k ? "#F2A31B1A" : "transparent" }}
-          >
-            {k}
-          </button>
-        ))}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ ...S.fieldLabel, marginBottom: 5 }}>Posisi</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {POSISI_LIST.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPosisi(p)}
+              style={{ ...S.urgChip, borderColor: posisi === p ? "#F2A31B" : "#38434A", color: posisi === p ? "#F2A31B" : "#8B98A0", background: posisi === p ? "#F2A31B1A" : "transparent" }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ ...S.fieldLabel, marginBottom: 5 }}>Kategori</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {KATEGORI_LIST.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setKategori(k)}
+              style={{ ...S.urgChip, borderColor: kategori === k ? "#F2A31B" : "#38434A", color: kategori === k ? "#F2A31B" : "#8B98A0", background: kategori === k ? "#F2A31B1A" : "transparent" }}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
       </div>
 
       {riggers.length === 0 && <EmptyState text="Belum ada anggota terdaftar." />}
@@ -470,6 +490,13 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
                   <span style={{ fontFamily: FONT_DISPLAY, fontSize: 14.5, color: "#EDEBE4" }}>{r}</span>
+                  <button
+                    onClick={() => { const idx = POSISI_LIST.indexOf(p.posisi || "Rigger"); onUpdateProfile(r, { posisi: POSISI_LIST[(idx + 1) % POSISI_LIST.length] }); }}
+                    style={S.posisiTag}
+                    title="Klik untuk ganti posisi"
+                  >
+                    {p.posisi || "Rigger"}
+                  </button>
                   <span style={S.kategoriTag}>{p.kategori || "TKJP"}</span>
                 </div>
                 <div style={{ fontSize: 11, color: "#8B98A0", marginTop: 2 }}>{p.sio ? "SIO terunggah" : "SIO belum diunggah"}</div>
@@ -661,7 +688,7 @@ function TeamAndGear({ riggers, profiles, gear }) {
     <div style={S.pageWrap}>
       <PageHeader eyebrow="SEMUA PIHAK" title="Tim & Alat" desc="Profil anggota rigger beserta SIO, dan daftar lifting gear yang tersedia." />
 
-      <div style={S.sectionLabel}>ANGGOTA RIGGER</div>
+      <div style={S.sectionLabel}>ANGGOTA TIM</div>
       {riggers.length === 0 && <EmptyState text="Belum ada anggota terdaftar." />}
       <div style={S.teamGrid}>
         {riggers.map((r) => {
@@ -672,7 +699,10 @@ function TeamAndGear({ riggers, profiles, gear }) {
                 {!p.foto && <User size={22} color="#5C666C" />}
               </div>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 13.5, color: "#EDEBE4", marginTop: 8, textAlign: "center" }}>{r}</div>
-              <span style={{ ...S.kategoriTag, marginTop: 4 }}>{p.kategori || "TKJP"}</span>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
+                <span style={S.posisiTag}>{p.posisi || "Rigger"}</span>
+                <span style={S.kategoriTag}>{p.kategori || "TKJP"}</span>
+              </div>
               {p.sio ? (
                 <button style={S.sioBtn} onClick={() => setZoom(p.sio)}>Lihat SIO</button>
               ) : (
@@ -1754,6 +1784,7 @@ const S = {
   lpChartRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#161B1E", borderRadius: 5, padding: "5px 10px" },
   sectionLabel: { fontFamily: FONT_MONO, fontSize: 11.5, letterSpacing: 1.2, color: "#F2A31B", marginBottom: 10 },
   kategoriTag: { fontSize: 10, fontFamily: FONT_MONO, color: "#8B98A0", border: "1px solid #38434A", borderRadius: 20, padding: "1.5px 8px", display: "inline-block" },
+  posisiTag: { fontSize: 10, fontFamily: FONT_MONO, color: "#F2A31B", border: "1px solid #F2A31B55", background: "#F2A31B14", borderRadius: 20, padding: "1.5px 8px", display: "inline-block", cursor: "pointer" },
   photoBox: { width: 40, height: 40, border: "1px dashed #38434A", background: "#161B1E center/cover no-repeat", backgroundSize: "cover", backgroundPosition: "center", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
   gearKondisi: { fontFamily: FONT_MONO, fontSize: 11, border: "1px solid", borderRadius: 20, padding: "4px 11px", background: "transparent" },
   teamGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))", gap: 12, maxWidth: 560 },
