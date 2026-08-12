@@ -40,7 +40,7 @@ function parseTon(text) {
   return m ? m[0] : "";
 }
 function emptyLiftingPlan() {
-  return { alat: "", swl: "", beratBeban: "", radius: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
+  return { alat: "", swl: "", beratBeban: "", radius: "", boom: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
 }
 function isChecklistComplete(checklist) {
   return CHECKLIST_ITEMS.every((c) => checklist && checklist[c.id]);
@@ -65,6 +65,39 @@ function interpolateLoadChart(chart, radius) {
     }
   }
   return null;
+}
+function chartHasBoom(chart) {
+  return !!(chart && chart.some((p) => p.boom !== undefined && p.boom !== null && String(p.boom).trim() !== ""));
+}
+function chartBoomOptions(chart) {
+  if (!chart) return [];
+  const set = new Set(chart.map((p) => String(p.boom)).filter((b) => b && b !== "undefined"));
+  return [...set].sort((a, b) => parseFloat(a) - parseFloat(b));
+}
+function interpolateLoadChart2D(chart, boom, radius) {
+  if (!chart || chart.length === 0) return null;
+  if (!chartHasBoom(chart)) return interpolateLoadChart(chart, radius);
+  const options = chartBoomOptions(chart);
+  if (options.length === 0) return null;
+  let useBoom = String(boom);
+  let boomOutOfRange = false;
+  if (!options.includes(useBoom)) {
+    // pick nearest available boom length
+    const target = parseFloat(boom);
+    if (isNaN(target)) return null;
+    let nearest = options[0];
+    let bestDiff = Infinity;
+    for (const o of options) {
+      const diff = Math.abs(parseFloat(o) - target);
+      if (diff < bestDiff) { bestDiff = diff; nearest = o; }
+    }
+    useBoom = nearest;
+    boomOutOfRange = true;
+  }
+  const subset = chart.filter((p) => String(p.boom) === useBoom);
+  const result = interpolateLoadChart(subset, radius);
+  if (!result) return null;
+  return { ...result, outOfRange: result.outOfRange || boomOutOfRange, boomUsed: useBoom };
 }
 function seedProfiles() {
   return {
@@ -293,7 +326,7 @@ export default function App() {
       const lp = patch.liftingPlan;
       const req = requests.find((r) => r.id === id);
       if (req && lp.alat && lp.swl && lp.beratBeban) {
-        upsertLiftingLibrary(req.barang, req.lokasi, { alat: lp.alat, swl: lp.swl, beratBeban: lp.beratBeban, radius: lp.radius || "", kode: lp.kodeBarang || "" });
+        upsertLiftingLibrary(req.barang, req.lokasi, { alat: lp.alat, swl: lp.swl, beratBeban: lp.beratBeban, radius: lp.radius || "", boom: lp.boom || "", kode: lp.kodeBarang || "" });
       }
     }
   };
@@ -571,15 +604,22 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
 /* ============================== GEAR ROW + LOAD CHART ============================== */
 function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
   const [expanded, setExpanded] = useState(false);
+  const [boom, setBoom] = useState("");
   const [radius, setRadius] = useState("");
   const [kap, setKap] = useState("");
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const chart = g.loadChart || [];
 
+  const sortChart = (arr) => [...arr].sort((a, b) => {
+    const ba = parseFloat(a.boom) || 0, bb = parseFloat(b.boom) || 0;
+    if (ba !== bb) return ba - bb;
+    return parseFloat(a.radius) - parseFloat(b.radius);
+  });
+
   const addPoint = () => {
     if (!radius || !kap) return;
-    const next = [...chart, { radius, kapasitas: kap }].sort((a, b) => parseFloat(a.radius) - parseFloat(b.radius));
+    const next = sortChart([...chart, { boom: boom || "", radius, kapasitas: kap }]);
     onUpdateGear(g.id, { loadChart: next });
     setRadius(""); setKap("");
   };
@@ -590,14 +630,19 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
     const points = [];
     for (const line of lines) {
       const parts = line.split(/[,;\t]+|\s+/).map((s) => s.trim()).filter(Boolean);
-      if (parts.length >= 2) {
+      if (parts.length >= 3) {
+        const boomVal = parts[0].replace(",", ".");
+        const rad = parseFloat(parts[1].replace(",", "."));
+        const kapVal = parseFloat(parts[2].replace(",", "."));
+        if (!isNaN(rad) && !isNaN(kapVal)) points.push({ boom: boomVal, radius: String(rad), kapasitas: String(kapVal) });
+      } else if (parts.length === 2) {
         const rad = parseFloat(parts[0].replace(",", "."));
         const kapVal = parseFloat(parts[1].replace(",", "."));
-        if (!isNaN(rad) && !isNaN(kapVal)) points.push({ radius: String(rad), kapasitas: String(kapVal) });
+        if (!isNaN(rad) && !isNaN(kapVal)) points.push({ boom: "", radius: String(rad), kapasitas: String(kapVal) });
       }
     }
     if (points.length === 0) return;
-    const merged = [...chart, ...points].sort((a, b) => parseFloat(a.radius) - parseFloat(b.radius));
+    const merged = sortChart([...chart, ...points]);
     onUpdateGear(g.id, { loadChart: merged });
     setBulkText("");
     setShowBulk(false);
@@ -621,19 +666,25 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
 
       {expanded && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2A333A" }}>
-          <div style={{ ...S.fieldLabel, marginBottom: 6 }}>Load chart (radius vs kapasitas) — untuk crane</div>
-          {chart.length === 0 && <div style={{ fontSize: 11.5, color: "#5C666C", marginBottom: 8 }}>Belum ada titik chart. Kalau alat ini bukan crane, boleh dibiarkan kosong (pakai kapasitas tetap).</div>}
+          <div style={{ ...S.fieldLabel, marginBottom: 6 }}>Load chart (boom + radius vs kapasitas) — untuk crane</div>
+          {chart.length === 0 && <div style={{ fontSize: 11.5, color: "#5C666C", marginBottom: 8 }}>Belum ada titik chart. Kalau alat ini bukan crane, boleh dibiarkan kosong (pakai kapasitas tetap). Kolom "Boom" boleh dikosongkan kalau alatnya tidak punya variasi panjang boom.</div>}
           {chart.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
               {chart.map((p, i) => (
                 <div key={i} style={S.lpChartRow}>
-                  <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#C9D1D6" }}>Radius {p.radius} m → {p.kapasitas} ton</span>
+                  <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: "#C9D1D6" }}>
+                    {p.boom ? `Boom ${p.boom} m · ` : ""}Radius {p.radius} m → {p.kapasitas} ton
+                  </span>
                   <button onClick={() => removePoint(i)} style={S.memberRemoveBtn}><X size={11} /></button>
                 </div>
               ))}
             </div>
           )}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 10 }}>
+            <div>
+              <div style={S.fieldLabel}>Boom (m, opsional)</div>
+              <input value={boom} onChange={(e) => setBoom(e.target.value)} style={{ ...S.inputSm, width: 90 }} placeholder="cth. 23.8" />
+            </div>
             <div>
               <div style={S.fieldLabel}>Radius (m)</div>
               <input value={radius} onChange={(e) => setRadius(e.target.value)} style={{ ...S.inputSm, width: 90 }} placeholder="cth. 5" />
@@ -649,14 +700,13 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
           {showBulk && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 11, color: "#5C666C", marginBottom: 6 }}>
-                Tempel daftar radius & kapasitas, satu baris per titik. Boleh dipisah koma, spasi, atau tab (langsung dari copy tabel) — contoh:{" "}
-                <span style={{ fontFamily: FONT_MONO }}>3, 8</span> lalu baris baru <span style={{ fontFamily: FONT_MONO }}>4, 7</span>
+                Tempel daftar, satu baris per titik, dipisah koma/spasi/tab. Kalau crane punya variasi boom, isi 3 kolom: <span style={{ fontFamily: FONT_MONO }}>boom, radius, kapasitas</span> (contoh: <span style={{ fontFamily: FONT_MONO }}>23.8, 5, 23</span>). Kalau tidak ada variasi boom, cukup 2 kolom: <span style={{ fontFamily: FONT_MONO }}>radius, kapasitas</span>.
               </div>
               <textarea
                 value={bulkText}
                 onChange={(e) => setBulkText(e.target.value)}
                 style={{ ...S.input, minHeight: 100, resize: "vertical", fontFamily: FONT_MONO, fontSize: 12.5 }}
-                placeholder={"3, 8\n4, 7\n5, 6\n6, 5"}
+                placeholder={"23.8, 5, 23\n23.8, 6, 22\n30.7, 5, 12.5"}
               />
               <button onClick={importBulk} style={{ ...S.submitBtn, width: "auto", padding: "9px 16px", marginTop: 8 }}>Import ke Load Chart</button>
             </div>
@@ -882,7 +932,7 @@ function LiftingPlanDetail({ plan }) {
   return (
     <div style={S.lpDetailBox}>
       <div style={S.miniMeta}>
-        {plan.kodeBarang && `Kode: ${plan.kodeBarang} · `}{plan.alat && `Alat: ${plan.alat}`}{plan.radius && ` · Radius: ${plan.radius} m`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
+        {plan.kodeBarang && `Kode: ${plan.kodeBarang} · `}{plan.alat && `Alat: ${plan.alat}`}{plan.boom && ` · Boom: ${plan.boom} m`}{plan.radius && ` · Radius: ${plan.radius} m`}{plan.swl && ` · SWL: ${plan.swl} ton`}{plan.beratBeban && ` · Beban: ${plan.beratBeban} ton`}
         {pct !== null && ` · ${pct}% (${jenisLift})`}
       </div>
       <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1324,11 +1374,13 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
   const libEntry = useMemo(() => liftingLibrary.find((e) => e.key === libKey(r.barang, r.lokasi)), [liftingLibrary, r.barang, r.lokasi]);
   const selectedGear = gear.find((x) => x.nama === plan.alat);
   const hasChart = !!(selectedGear && selectedGear.loadChart && selectedGear.loadChart.length > 0);
-  const chartResult = hasChart && plan.radius ? interpolateLoadChart(selectedGear.loadChart, plan.radius) : null;
+  const needsBoom = hasChart && chartHasBoom(selectedGear.loadChart);
+  const boomOptions = needsBoom ? chartBoomOptions(selectedGear.loadChart) : [];
+  const chartResult = hasChart && plan.radius && (!needsBoom || plan.boom) ? interpolateLoadChart2D(selectedGear.loadChart, plan.boom, plan.radius) : null;
 
   useEffect(() => {
     if (!plan.alat && !plan.swl && !plan.beratBeban && libEntry) {
-      onChange({ alat: libEntry.alat, swl: libEntry.swl, beratBeban: libEntry.beratBeban, radius: libEntry.radius || "", kodeBarang: libEntry.kode || "" });
+      onChange({ alat: libEntry.alat, swl: libEntry.swl, beratBeban: libEntry.beratBeban, radius: libEntry.radius || "", boom: libEntry.boom || "", kodeBarang: libEntry.kode || "" });
       notify(`Data "${r.barang}" di "${r.lokasi}" otomatis terisi dari riwayat sebelumnya`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1343,20 +1395,24 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
   const pickGear = (name) => {
     const g = gear.find((x) => x.nama === name);
     const gHasChart = !!(g && g.loadChart && g.loadChart.length > 0);
-    setField({ alat: name, radius: "", swl: gHasChart ? "" : (g ? parseTon(g.kapasitas) : plan.swl) });
+    setField({ alat: name, radius: "", boom: "", swl: gHasChart ? "" : (g ? parseTon(g.kapasitas) : plan.swl) });
   };
 
-  const setRadius = (val) => {
-    const result = hasChart ? interpolateLoadChart(selectedGear.loadChart, val) : null;
-    setField({ radius: val, swl: result ? String(result.value) : "" });
+  const recalcSwl = (boomVal, radiusVal) => {
+    if (!hasChart) return "";
+    const result = interpolateLoadChart2D(selectedGear.loadChart, boomVal, radiusVal);
+    return result ? String(result.value) : "";
   };
+
+  const setBoom = (val) => setField({ boom: val, swl: recalcSwl(val, plan.radius) });
+  const setRadius = (val) => setField({ radius: val, swl: recalcSwl(plan.boom, val) });
 
   const toggleCheck = (id) => {
     setField({ checklist: { ...plan.checklist, [id]: !plan.checklist[id] } });
   };
 
   const applyTemplate = (tpl) => {
-    setField({ alat: tpl.alat, swl: tpl.swl, radius: tpl.radius || "", checklist: { ...tpl.checklist }, templateUsed: tpl.nama });
+    setField({ alat: tpl.alat, swl: tpl.swl, radius: tpl.radius || "", boom: tpl.boom || "", checklist: { ...tpl.checklist }, templateUsed: tpl.nama });
   };
 
   const genericTemplates = liftingTemplates.filter((t) => gear.some((g) => g.nama === t.alat));
@@ -1387,7 +1443,7 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
       {libEntry && (
         <div style={S.lpLibNote}>
           <Check size={12} color="#5FA980" style={{ flexShrink: 0 }} />
-          Data "{r.barang}" di "{r.lokasi}" sudah pernah tercatat{libEntry.kode ? ` (Kode: ${libEntry.kode})` : ""}: {libEntry.alat}{libEntry.radius ? ` · Radius ${libEntry.radius} m` : ""} · SWL {libEntry.swl} ton · Beban {libEntry.beratBeban} ton
+          Data "{r.barang}" di "{r.lokasi}" sudah pernah tercatat{libEntry.kode ? ` (Kode: ${libEntry.kode})` : ""}: {libEntry.alat}{libEntry.boom ? ` · Boom ${libEntry.boom} m` : ""}{libEntry.radius ? ` · Radius ${libEntry.radius} m` : ""} · SWL {libEntry.swl} ton · Beban {libEntry.beratBeban} ton
         </div>
       )}
 
@@ -1404,6 +1460,15 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
             {gear.map((g) => <option key={g.id} value={g.nama}>{g.nama}</option>)}
           </select>
         </div>
+        {needsBoom && (
+          <div>
+            <div style={S.fieldLabel}>Boom (m)</div>
+            <select value={plan.boom} onChange={(e) => setBoom(e.target.value)} style={{ ...S.lpSelect, width: 110 }}>
+              <option value="">Pilih...</option>
+              {boomOptions.map((b) => <option key={b} value={b}>{b} m</option>)}
+            </select>
+          </div>
+        )}
         <div>
           {hasChart ? (
             <>
@@ -1423,13 +1488,16 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
         </div>
       </div>
 
-      {hasChart && plan.radius && (
+      {hasChart && plan.radius && (!needsBoom || plan.boom) && (
         <div style={{ ...S.lpLibNote, color: chartResult && chartResult.outOfRange ? "#E1493F" : "#5FA980", background: chartResult && chartResult.outOfRange ? "#E1493F0F" : "#5FA9800F", borderColor: chartResult && chartResult.outOfRange ? "#E1493F33" : "#5FA98033" }}>
           {chartResult && chartResult.outOfRange ? <AlertTriangle size={12} style={{ flexShrink: 0 }} /> : <Check size={12} color="#5FA980" style={{ flexShrink: 0 }} />}
           {chartResult
-            ? `SWL otomatis dari load chart pada radius ${plan.radius} m: ${chartResult.value} ton${chartResult.outOfRange ? " — di luar jangkauan chart, gunakan dengan hati-hati" : ""}`
+            ? `SWL otomatis dari load chart${needsBoom ? ` (boom ${chartResult.boomUsed} m${chartResult.boomUsed !== plan.boom ? ", dibulatkan ke boom terdekat" : ""})` : ""} pada radius ${plan.radius} m: ${chartResult.value} ton${chartResult.outOfRange ? " — di luar jangkauan chart, gunakan dengan hati-hati" : ""}`
             : "Radius di luar data load chart"}
         </div>
+      )}
+      {needsBoom && !plan.boom && (
+        <div style={S.lpWarn}><AlertTriangle size={12} /> Pilih panjang boom dulu supaya SWL bisa dihitung.</div>
       )}
 
       <div style={S.fieldLabel}>Checklist pre-use</div>
