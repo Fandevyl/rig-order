@@ -1259,20 +1259,16 @@ function Dashboard({ requests, riggers, gear, liftingTemplates, liftingLibrary, 
 function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showLP, setShowLP] = useState(false);
   const urg = URGENSI.find((u) => u.key === r.urgensi);
 
   const toggleRigger = (name) => {
     const has = r.riggers.includes(name);
     const riggers = has ? r.riggers.filter((x) => x !== name) : [...r.riggers, name];
-    const planOk = r.liftingPlan && r.liftingPlan.completed;
-    onUpdate(r.id, { riggers, status: riggers.length > 0 && r.status === "Pending" && planOk ? "Diproses" : r.status });
+    onUpdate(r.id, { riggers, status: riggers.length > 0 && r.status === "Pending" ? "Diproses" : r.status });
   };
 
   const setStatus = (status) => {
-    if (status === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed)) {
-      notify("Lengkapi Lifting Plan & checklist pre-use dulu sebelum status jadi Diproses");
-      return;
-    }
     onUpdate(r.id, { status });
     notify(`Status diubah ke "${status}"`);
   };
@@ -1325,14 +1321,17 @@ function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSave
             </div>
           </div>
 
-          <LiftingPlanEditor r={r} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={onSaveTemplate} notify={notify}
-            onChange={(patch) => onUpdate(r.id, { liftingPlan: { ...emptyLiftingPlan(), ...r.liftingPlan, ...patch } })} />
+          <button onClick={() => setShowLP((s) => !s)} style={{ ...S.lpViewBtn, marginTop: 14 }}>
+            {showLP ? "Tutup Lifting Plan" : `+ Tambah Lifting Plan (opsional)${r.liftingPlan && (r.liftingPlan.alat || r.liftingPlan.swl) ? " · sudah ada data" : ""}`}
+          </button>
+          {showLP && (
+            <LiftingPlanEditor r={r} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={onSaveTemplate} notify={notify}
+              onChange={(patch) => onUpdate(r.id, { liftingPlan: { ...emptyLiftingPlan(), ...r.liftingPlan, ...patch } })} />
+          )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             {STATUS_FLOW.map((s) => (
-              <button key={s} onClick={() => setStatus(s)} disabled={s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed)}
-                style={{ ...S.statusBtn, ...(r.status === s ? S.statusBtnActive : {}), ...(s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed) ? { opacity: 0.4, cursor: "not-allowed" } : {}) }}>
-                {s === "Diproses" && !(r.liftingPlan && r.liftingPlan.completed) && <Lock size={11} style={{ marginRight: 4, position: "relative", top: 2 }} />}
+              <button key={s} onClick={() => setStatus(s)} style={{ ...S.statusBtn, ...(r.status === s ? S.statusBtnActive : {}) }}>
                 {s}
               </button>
             ))}
