@@ -215,7 +215,7 @@ export default function App() {
   const [liftingLibrary, setLiftingLibrary] = useState([]);
   const [role, setRole] = useState("pengawas"); // 'pengawas' | area name
   const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState("request");
+  const [tab, setTab] = useState("beranda");
   const [toast, setToast] = useState(null);
   const printRef = React.useRef(null);
 
@@ -346,6 +346,7 @@ export default function App() {
         { key: "tim", label: "Tim & Alat", icon: Users },
       ]
     : [
+        { key: "beranda", label: "Beranda", icon: LayoutGrid },
         { key: "dashboard", label: "Dashboard", icon: LayoutGrid },
         { key: "harian", label: "Laporan Harian", icon: CalendarClock },
         { key: "grafik", label: "Grafik & Rekap", icon: BarChart3 },
@@ -414,10 +415,10 @@ export default function App() {
       {/* Main */}
       <main style={S.main} className="no-print-area">
         {tab === "tim" && <TeamAndGear riggers={riggers} profiles={profiles} gear={gear} />}
-        {isMA && tab === "beranda" && <BerandaMA requests={requests} area={role} />}
+        {tab === "beranda" && <BerandaMA requests={requests} area={role} />}
         {isMA && tab === "request" && <RequestForm area={role} onSubmit={addRequest} />}
         {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} />}
-        {!isMA && tab !== "tim" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
+        {!isMA && tab !== "tim" && tab !== "beranda" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
         {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
