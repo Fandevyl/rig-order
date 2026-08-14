@@ -351,6 +351,15 @@ export default function App() {
     notify("Permintaan dihapus");
   };
 
+  const addComment = (id, nama, teks) => {
+    if (!teks.trim()) return;
+    setRequests((prev) => prev.map((r) => {
+      if (r.id !== id) return r;
+      const comments = [...(r.comments || []), { nama: nama.trim() || "Anonim", teks: teks.trim(), at: new Date().toISOString() }];
+      return { ...r, comments };
+    }));
+  };
+
   const isMA = role !== "pengawas";
 
   const NAV = isMA
@@ -430,11 +439,11 @@ export default function App() {
       {/* Main */}
       <main style={S.main} className="no-print-area">
         {tab === "tim" && <TeamAndGear riggers={riggers} profiles={profiles} gear={gear} />}
-        {tab === "beranda" && <BerandaMA requests={requests} area={role} />}
+        {tab === "beranda" && <BerandaMA requests={requests} area={role} onAddComment={addComment} />}
         {isMA && tab === "request" && <RequestForm area={role} onSubmit={addRequest} />}
-        {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} />}
+        {isMA && tab === "status" && <StatusList area={role} requests={requests.filter((r) => r.area === role)} onAddComment={addComment} />}
         {!isMA && tab !== "tim" && tab !== "beranda" && !authed && <PasswordGate onSuccess={() => setAuthed(true)} />}
-        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} notify={notify} onPrint={handlePrint} />}
+        {!isMA && authed && tab === "dashboard" && <Dashboard requests={requests} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary} onSaveTemplate={saveLiftingTemplate} onUpdate={updateRequest} onDelete={deleteRequest} onAddComment={addComment} notify={notify} onPrint={handlePrint} />}
         {!isMA && authed && tab === "harian" && <DailyReport requests={requests} />}
         {!isMA && authed && tab === "grafik" && <Charts requests={requests} riggers={riggers} />}
         {!isMA && authed && tab === "lembur" && <Overtime requests={requests} riggers={riggers} onUpdate={updateRequest} />}
@@ -982,7 +991,7 @@ function buildTicketPage(r) {
 }
 
 /* ============================== BERANDA (MA — semua area) ============================== */
-function BerandaMA({ requests, area }) {
+function BerandaMA({ requests, area, onAddComment }) {
   const rank = { ss: 0, darurat: 1, normal: 2 };
   const antrian = [...requests]
     .filter((r) => r.status === "Pending")
@@ -1002,21 +1011,21 @@ function BerandaMA({ requests, area }) {
       <div style={S.groupHeader}><StatusDot status="Pending" /> DALAM ANTRIAN <span style={S.groupCount}>{antrian.length}</span></div>
       {antrian.length === 0 ? <EmptyState text="Tidak ada permintaan yang mengantre saat ini." /> : (
         <div style={{ ...S.cardList, marginBottom: 22 }}>
-          {antrian.map((r, i) => <QueueCard key={r.id} r={r} queueNo={i + 1} mine={r.area === area} />)}
+          {antrian.map((r, i) => <QueueCard key={r.id} r={r} queueNo={i + 1} mine={r.area === area} onAddComment={onAddComment} />)}
         </div>
       )}
 
       <div style={S.groupHeader}><StatusDot status="Diproses" /> SEDANG DIKERJAKAN <span style={S.groupCount}>{diproses.length}</span></div>
       {diproses.length === 0 ? <EmptyState text="Tidak ada pekerjaan yang sedang berjalan." /> : (
         <div style={{ ...S.cardList, marginBottom: 22 }}>
-          {diproses.map((r) => <QueueCard key={r.id} r={r} mine={r.area === area} />)}
+          {diproses.map((r) => <QueueCard key={r.id} r={r} mine={r.area === area} onAddComment={onAddComment} />)}
         </div>
       )}
 
       <div style={S.groupHeader}><StatusDot status="Selesai" /> SELESAI TERBARU</div>
       {selesai.length === 0 ? <EmptyState text="Belum ada yang selesai." /> : (
         <div style={S.cardList}>
-          {selesai.map((r) => <QueueCard key={r.id} r={r} mine={r.area === area} />)}
+          {selesai.map((r) => <QueueCard key={r.id} r={r} mine={r.area === area} onAddComment={onAddComment} />)}
         </div>
       )}
     </div>
@@ -1024,6 +1033,49 @@ function BerandaMA({ requests, area }) {
 }
 
 /* ============================== LIFTING PLAN — TAMPILAN PUBLIK ============================== */
+/* ============================== KOMENTAR (bisa dipakai MA & Pengawas) ============================== */
+function CommentBox({ r, onAddComment }) {
+  const [nama, setNama] = useState("");
+  const [teks, setTeks] = useState("");
+  const comments = r.comments || [];
+
+  const submit = () => {
+    if (!teks.trim()) return;
+    onAddComment(r.id, nama, teks);
+    setTeks("");
+  };
+
+  return (
+    <div style={S.commentBox}>
+      <div style={S.fieldLabel}>KOMENTAR ({comments.length})</div>
+      {comments.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, marginBottom: 10 }}>
+          {comments.map((c, i) => (
+            <div key={i} style={S.commentItem}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 12.5, color: "#F2A31B" }}>{c.nama}</span>
+                <span style={{ fontSize: 10, color: "#5C666C", fontFamily: FONT_MONO }}>{new Date(c.at).toLocaleString("id-ID")}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: "#C9D1D6", marginTop: 3 }}>{c.teks}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <input value={nama} onChange={(e) => setNama(e.target.value)} style={{ ...S.inputSm, width: 110 }} placeholder="Nama" />
+        <input
+          value={teks}
+          onChange={(e) => setTeks(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}
+          style={{ ...S.inputSm, flex: 1, minWidth: 140 }}
+          placeholder="Tulis komentar..."
+        />
+        <button onClick={submit} style={{ ...S.submitBtn, width: "auto", padding: "9px 14px", marginTop: 0 }}>Kirim</button>
+      </div>
+    </div>
+  );
+}
+
 function LiftingPlanBadge({ plan }) {
   const hasAny = plan && (plan.alat || plan.swl || plan.beratBeban);
   if (!hasAny) return <span style={{ ...S.lpBadge, color: "#5C666C", borderColor: "#38434A" }}>Belum ada Lifting Plan</span>;
@@ -1077,7 +1129,7 @@ function JSADetail({ jsa }) {
   );
 }
 
-function QueueCard({ r, queueNo, mine }) {
+function QueueCard({ r, queueNo, mine, onAddComment }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
   const [showPlan, setShowPlan] = useState(false);
   const [showJSA, setShowJSA] = useState(false);
@@ -1112,6 +1164,7 @@ function QueueCard({ r, queueNo, mine }) {
       </div>
       {showPlan && plan && <LiftingPlanDetail plan={plan} />}
       {showJSA && jsa && <JSADetail jsa={jsa} />}
+      <CommentBox r={r} onAddComment={onAddComment} />
     </div>
   );
 }
@@ -1301,7 +1354,7 @@ function Field({ label, required, icon: Icon, children }) {
 }
 
 /* ============================== STATUS LIST (MA read-only) ============================== */
-function StatusList({ area, requests }) {
+function StatusList({ area, requests, onAddComment }) {
   const grouped = STATUS_FLOW.map((s) => ({ status: s, items: requests.filter((r) => r.status === s) }));
   return (
     <div style={S.pageWrap}>
@@ -1312,7 +1365,7 @@ function StatusList({ area, requests }) {
           <div key={g.status}>
             <div style={S.groupHeader}><StatusDot status={g.status} /> {g.status.toUpperCase()} <span style={S.groupCount}>{g.items.length}</span></div>
             <div style={S.cardList}>
-              {g.items.map((r) => <RequestMiniCard key={r.id} r={r} />)}
+              {g.items.map((r) => <RequestMiniCard key={r.id} r={r} onAddComment={onAddComment} />)}
             </div>
           </div>
         ))}
@@ -1321,7 +1374,7 @@ function StatusList({ area, requests }) {
   );
 }
 
-function RequestMiniCard({ r }) {
+function RequestMiniCard({ r, onAddComment }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
   const [showPlan, setShowPlan] = useState(false);
   const [showJSA, setShowJSA] = useState(false);
@@ -1352,6 +1405,7 @@ function RequestMiniCard({ r }) {
       </div>
       {showPlan && plan && <LiftingPlanDetail plan={plan} />}
       {showJSA && jsa && <JSADetail jsa={jsa} />}
+      <CommentBox r={r} onAddComment={onAddComment} />
     </div>
   );
 }
@@ -1366,7 +1420,7 @@ function EmptyState({ text }) {
 }
 
 /* ============================== DASHBOARD (Pengawas) ============================== */
-function Dashboard({ requests, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
+function Dashboard({ requests, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, onAddComment, notify, onPrint }) {
   const [filter, setFilter] = useState("Semua");
   const sorted = useMemo(() => {
     const rank = { ss: 0, darurat: 1, normal: 2 };
@@ -1393,14 +1447,14 @@ function Dashboard({ requests, riggers, gear, liftingTemplates, liftingLibrary, 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {sorted.map((r) => (
           <RequestRow key={r.id} r={r} riggers={riggers} gear={gear} liftingTemplates={liftingTemplates} liftingLibrary={liftingLibrary}
-            onSaveTemplate={onSaveTemplate} onUpdate={onUpdate} onDelete={onDelete} notify={notify} onPrint={onPrint} />
+            onSaveTemplate={onSaveTemplate} onUpdate={onUpdate} onDelete={onDelete} onAddComment={onAddComment} notify={notify} onPrint={onPrint} />
         ))}
       </div>
     </div>
   );
 }
 
-function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, notify, onPrint }) {
+function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSaveTemplate, onUpdate, onDelete, onAddComment, notify, onPrint }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showLP, setShowLP] = useState(false);
@@ -1486,6 +1540,8 @@ function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSave
           {showJSA && (
             <JSAEditor jsa={r.jsa || emptyJSA()} onChange={(patch) => onUpdate(r.id, { jsa: { ...emptyJSA(), ...r.jsa, ...patch } })} />
           )}
+
+          <CommentBox r={r} onAddComment={onAddComment} />
 
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             {STATUS_FLOW.map((s) => (
@@ -2078,6 +2134,8 @@ const S = {
   lpCheckRow: { display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#C9D1D6", lineHeight: 1.3 },
   lpWarn: { display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#F2A31B", marginBottom: 8 },
   lpSaveTplBtn: { border: "1px dashed #5FA980", background: "#5FA9801A", color: "#5FA980", borderRadius: 6, padding: "7px 12px", fontSize: 11.5 },
+  commentBox: { marginTop: 10, paddingTop: 10, borderTop: "1px dashed #2A333A" },
+  commentItem: { background: "#161B1E", borderRadius: 6, padding: "7px 10px", border: "1px solid #2A333A" },
   lpViewBtn: { border: "1px solid #38434A", background: "transparent", color: "#8B98A0", borderRadius: 20, padding: "3px 10px", fontSize: 10.5 },
   lpDetailBox: { marginTop: 8, padding: "10px 12px", background: "#161B1E", borderRadius: 7, border: "1px solid #2A333A" },
   lpLibNote: { display: "flex", alignItems: "flex-start", gap: 6, fontSize: 11.5, color: "#5FA980", background: "#5FA9800F", border: "1px solid #5FA98033", borderRadius: 6, padding: "8px 10px", marginBottom: 10 },
