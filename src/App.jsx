@@ -325,6 +325,14 @@ export default function App() {
   const addRequest = (req) => {
     setRequests((prev) => [{ ...req, id: uid(), status: "Pending", riggers: [], createdAt: new Date().toISOString() }, ...prev]);
     notify("Permintaan terkirim ke Workshop");
+    fetch("/api/notify-wa", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        area: areaLabel(req.area), pemohon: req.pemohon, lokasi: req.lokasi, barang: req.barang,
+        tanggal: fmtDate(req.tanggal), jam: req.jam, urgensi: req.urgensi, keterangan: req.keterangan,
+      }),
+    }).catch(() => {}); // notifikasi WA bersifat best-effort, tidak boleh menghalangi alur utama
   };
 
   const updateRequest = (id, patch) => {
