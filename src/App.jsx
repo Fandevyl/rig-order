@@ -325,7 +325,7 @@ export default function App() {
   const addRequest = (req) => {
     setRequests((prev) => [{ ...req, id: uid(), status: "Pending", riggers: [], createdAt: new Date().toISOString() }, ...prev]);
     notify("Permintaan terkirim ke Workshop");
-    fetch("/api/notify-wa", {
+    fetch("/api/notify-discord", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
