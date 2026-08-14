@@ -42,6 +42,12 @@ function parseTon(text) {
 function emptyLiftingPlan() {
   return { alat: "", swl: "", beratBeban: "", radius: "", boom: "", checklist: {}, completed: false, templateUsed: "", kodeBarang: "" };
 }
+function emptyJSA() {
+  return { hazards: [], pengawasNama: "", pengawasAt: "", safetyNama: "", safetyAt: "", completed: false };
+}
+function isJSAComplete(jsa) {
+  return !!(jsa && jsa.hazards && jsa.hazards.length > 0 && jsa.hazards.every((h) => h.hazard && h.mitigation) && jsa.pengawasNama && jsa.safetyNama);
+}
 function isChecklistComplete(checklist) {
   return CHECKLIST_ITEMS.every((c) => checklist && checklist[c.id]);
 }
@@ -111,12 +117,13 @@ function seedProfiles() {
 }
 function seedGear() {
   return [
-    { id: uid(), nama: "Web Sling 2 Ton", kapasitas: "2 ton", kondisi: "Baik" },
-    { id: uid(), nama: "Chain Block 3 Ton", kapasitas: "3 ton", kondisi: "Baik" },
-    { id: uid(), nama: "Shackle 1 Ton", kapasitas: "1 ton", kondisi: "Rusak" },
-    { id: uid(), nama: "Wire Rope Sling 5 Ton", kapasitas: "5 ton", kondisi: "Baik" },
+    { id: uid(), nama: "Web Sling 2 Ton", kapasitas: "2 ton", kondisi: "Baik", kategori: "Lifting Gear" },
+    { id: uid(), nama: "Chain Block 3 Ton", kapasitas: "3 ton", kondisi: "Baik", kategori: "Lifting Equipment" },
+    { id: uid(), nama: "Shackle 1 Ton", kapasitas: "1 ton", kondisi: "Rusak", kategori: "Lifting Gear" },
+    { id: uid(), nama: "Wire Rope Sling 5 Ton", kapasitas: "5 ton", kondisi: "Baik", kategori: "Lifting Gear" },
   ];
 }
+const GEAR_KATEGORI_LIST = ["Lifting Equipment", "Lifting Gear"];
 const URGENSI = [
   { key: "normal", label: "Normal", color: "#8B98A0" },
   { key: "darurat", label: "Darurat", color: "#F2A31B" },
@@ -440,6 +447,7 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
   const [posisi, setPosisi] = useState("Rigger");
   const [gNama, setGNama] = useState("");
   const [gKap, setGKap] = useState("");
+  const [gKategori, setGKategori] = useState("Lifting Equipment");
 
   const submitRigger = () => {
     if (!name.trim()) return;
@@ -449,7 +457,7 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
 
   const submitGear = () => {
     if (!gNama.trim()) return;
-    onAddGear({ nama: gNama.trim(), kapasitas: gKap.trim(), kondisi: "Baik" });
+    onAddGear({ nama: gNama.trim(), kapasitas: gKap.trim(), kondisi: "Baik", kategori: gKategori });
     setGNama(""); setGKap("");
   };
 
@@ -546,8 +554,20 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
       </div>
 
       {/* Alat */}
-      <div style={S.sectionLabel}>LIFTING GEAR</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, maxWidth: 480, flexWrap: "wrap" }}>
+      <div style={S.sectionLabel}>ALAT & GEAR</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        {GEAR_KATEGORI_LIST.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setGKategori(k)}
+            style={{ ...S.urgChip, borderColor: gKategori === k ? "#F2A31B" : "#38434A", color: gKategori === k ? "#F2A31B" : "#8B98A0", background: gKategori === k ? "#F2A31B1A" : "transparent" }}
+          >
+            {k}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, maxWidth: 480, flexWrap: "wrap" }}>
         <input style={{ ...S.input, flex: 2, minWidth: 160 }} value={gNama} onChange={(e) => setGNama(e.target.value)} placeholder="Nama alat" />
         <input style={{ ...S.input, flex: 1, minWidth: 100 }} value={gKap} onChange={(e) => setGKap(e.target.value)} placeholder="Kapasitas" />
         <button type="button" onClick={submitGear} style={{ ...S.submitBtn, width: "auto", padding: "9px 16px", marginTop: 0 }}>
@@ -557,11 +577,20 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
 
       {gear.length === 0 && <EmptyState text="Belum ada alat terdaftar." />}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 520 }}>
-        {gear.map((g) => (
-          <GearRow key={g.id} g={g} onToggleGear={onToggleGear} onRemoveGear={onRemoveGear} onUpdateGear={onUpdateGear} />
-        ))}
-      </div>
+      {GEAR_KATEGORI_LIST.map((kat) => {
+        const items = gear.filter((g) => (g.kategori || "Lifting Equipment") === kat);
+        if (items.length === 0) return null;
+        return (
+          <div key={kat} style={{ marginBottom: 22 }}>
+            <div style={{ ...S.fieldLabel, marginBottom: 8 }}>{kat.toUpperCase()}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 520 }}>
+              {items.map((g) => (
+                <GearRow key={g.id} g={g} onToggleGear={onToggleGear} onRemoveGear={onRemoveGear} onUpdateGear={onUpdateGear} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
 
       <div style={{ ...S.sectionLabel, marginTop: 26 }}>TEMPLATE LIFTING PLAN</div>
       {liftingTemplates.length === 0 ? (
@@ -772,21 +801,29 @@ function TeamAndGear({ riggers, profiles, gear }) {
         })}
       </div>
 
-      <div style={{ ...S.sectionLabel, marginTop: 26 }}>LIFTING GEAR</div>
-      {gear.length === 0 && <EmptyState text="Belum ada alat terdaftar." />}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480 }}>
-        {gear.map((g) => (
-          <div key={g.id} style={S.memberRow}>
-            <div>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
-              <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}</div>
+      {GEAR_KATEGORI_LIST.map((kat) => {
+        const items = gear.filter((g) => (g.kategori || "Lifting Equipment") === kat);
+        if (items.length === 0) return null;
+        return (
+          <div key={kat} style={{ marginTop: 26 }}>
+            <div style={S.sectionLabel}>{kat.toUpperCase()}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 480 }}>
+              {items.map((g) => (
+                <div key={g.id} style={S.memberRow}>
+                  <div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
+                    <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}</div>
+                  </div>
+                  <span style={{ ...S.gearKondisi, color: g.kondisi === "Baik" ? "#5FA980" : "#E1493F", borderColor: (g.kondisi === "Baik" ? "#5FA980" : "#E1493F") + "55" }}>
+                    {g.kondisi}
+                  </span>
+                </div>
+              ))}
             </div>
-            <span style={{ ...S.gearKondisi, color: g.kondisi === "Baik" ? "#5FA980" : "#E1493F", borderColor: (g.kondisi === "Baik" ? "#5FA980" : "#E1493F") + "55" }}>
-              {g.kondisi}
-            </span>
           </div>
-        ))}
-      </div>
+        );
+      })}
+      {gear.length === 0 && <EmptyState text="Belum ada alat terdaftar." />}
 
       {zoom && (
         <div style={S.zoomOverlay} onClick={() => setZoom(null)}>
@@ -948,10 +985,37 @@ function LiftingPlanDetail({ plan }) {
   );
 }
 
+function JSABadge({ jsa }) {
+  const hasAny = jsa && jsa.hazards && jsa.hazards.length > 0;
+  if (!hasAny) return <span style={{ ...S.lpBadge, color: "#5C666C", borderColor: "#38434A" }}>Belum ada JSA</span>;
+  if (jsa.completed) return <span style={{ ...S.lpBadge, color: "#5FA980", borderColor: "#5FA98066" }}><Check size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />JSA Lengkap</span>;
+  return <span style={{ ...S.lpBadge, color: "#F2A31B", borderColor: "#F2A31B66" }}><AlertTriangle size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />JSA Belum Lengkap</span>;
+}
+
+function JSADetail({ jsa }) {
+  return (
+    <div style={S.lpDetailBox}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {jsa.hazards.map((h, i) => (
+          <div key={i} style={{ fontSize: 11.5, color: "#C9D1D6" }}>
+            <span style={{ color: "#F2A31B" }}>Bahaya:</span> {h.hazard} <span style={{ color: "#5FA980" }}>· Mitigasi:</span> {h.mitigation}
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #2A333A", fontSize: 11, color: "#8B98A0" }}>
+        {jsa.pengawasNama && `Disetujui Pengawas: ${jsa.pengawasNama}${jsa.pengawasAt ? ` (${new Date(jsa.pengawasAt).toLocaleString("id-ID")})` : ""}`}
+        {jsa.safetyNama && <><br />Disetujui Safety Officer: {jsa.safetyNama}{jsa.safetyAt ? ` (${new Date(jsa.safetyAt).toLocaleString("id-ID")})` : ""}</>}
+      </div>
+    </div>
+  );
+}
+
 function QueueCard({ r, queueNo, mine }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
   const [showPlan, setShowPlan] = useState(false);
+  const [showJSA, setShowJSA] = useState(false);
   const plan = r.liftingPlan;
+  const jsa = r.jsa;
   return (
     <div style={{ ...S.miniCard, borderColor: mine ? "#F2A31B55" : "#2A333A" }}>
       {r.urgensi === "ss" && <div style={S.ssRibbon}>SS</div>}
@@ -974,8 +1038,13 @@ function QueueCard({ r, queueNo, mine }) {
         {plan && (plan.alat || plan.swl) && (
           <button onClick={() => setShowPlan((s) => !s)} style={S.lpViewBtn}>{showPlan ? "Tutup" : "Lihat detail"}</button>
         )}
+        <JSABadge jsa={jsa} />
+        {jsa && jsa.hazards && jsa.hazards.length > 0 && (
+          <button onClick={() => setShowJSA((s) => !s)} style={S.lpViewBtn}>{showJSA ? "Tutup JSA" : "Lihat JSA"}</button>
+        )}
       </div>
       {showPlan && plan && <LiftingPlanDetail plan={plan} />}
+      {showJSA && jsa && <JSADetail jsa={jsa} />}
     </div>
   );
 }
@@ -1188,7 +1257,9 @@ function StatusList({ area, requests }) {
 function RequestMiniCard({ r }) {
   const urg = URGENSI.find((u) => u.key === r.urgensi);
   const [showPlan, setShowPlan] = useState(false);
+  const [showJSA, setShowJSA] = useState(false);
   const plan = r.liftingPlan;
+  const jsa = r.jsa;
   return (
     <div style={S.miniCard}>
       {r.urgensi === "ss" && <div style={S.ssRibbon}>SS</div>}
@@ -1207,8 +1278,13 @@ function RequestMiniCard({ r }) {
         {plan && (plan.alat || plan.swl) && (
           <button onClick={() => setShowPlan((s) => !s)} style={S.lpViewBtn}>{showPlan ? "Tutup" : "Lihat detail"}</button>
         )}
+        <JSABadge jsa={jsa} />
+        {jsa && jsa.hazards && jsa.hazards.length > 0 && (
+          <button onClick={() => setShowJSA((s) => !s)} style={S.lpViewBtn}>{showJSA ? "Tutup JSA" : "Lihat JSA"}</button>
+        )}
       </div>
       {showPlan && plan && <LiftingPlanDetail plan={plan} />}
+      {showJSA && jsa && <JSADetail jsa={jsa} />}
     </div>
   );
 }
@@ -1261,7 +1337,11 @@ function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSave
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showLP, setShowLP] = useState(false);
+  const [showJSA, setShowJSA] = useState(false);
   const urg = URGENSI.find((u) => u.key === r.urgensi);
+  const lp = r.liftingPlan;
+  const pct = lp && lp.swl && lp.beratBeban ? Math.round((parseFloat(lp.beratBeban) / parseFloat(lp.swl)) * 100) : null;
+  const isCriticalLift = pct !== null && pct >= CRITICAL_LIFT_THRESHOLD;
 
   const toggleRigger = (name) => {
     const has = r.riggers.includes(name);
@@ -1330,6 +1410,16 @@ function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSave
               onChange={(patch) => onUpdate(r.id, { liftingPlan: { ...emptyLiftingPlan(), ...r.liftingPlan, ...patch } })} />
           )}
 
+          {(isCriticalLift || (r.urgensi === "ss")) && !showJSA && (
+            <div style={S.lpWarn}><AlertTriangle size={12} /> Disarankan isi JSA untuk {isCriticalLift ? "Critical Lift" : "Panggilan SS"} ini.</div>
+          )}
+          <button onClick={() => setShowJSA((s) => !s)} style={{ ...S.lpViewBtn, marginTop: 8 }}>
+            {showJSA ? "Tutup JSA" : `+ Tambah JSA (opsional)${r.jsa && r.jsa.hazards && r.jsa.hazards.length > 0 ? " · sudah ada data" : ""}`}
+          </button>
+          {showJSA && (
+            <JSAEditor jsa={r.jsa || emptyJSA()} onChange={(patch) => onUpdate(r.id, { jsa: { ...emptyJSA(), ...r.jsa, ...patch } })} />
+          )}
+
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
             {STATUS_FLOW.map((s) => (
               <button key={s} onClick={() => setStatus(s)} style={{ ...S.statusBtn, ...(r.status === s ? S.statusBtnActive : {}) }}>
@@ -1363,6 +1453,69 @@ function RequestRow({ r, riggers, gear, liftingTemplates, liftingLibrary, onSave
 
 /* ============================== LAPORAN HARIAN ============================== */
 /* ============================== LIFTING PLAN ============================== */
+/* ============================== JSA (JOB SAFETY ANALYSIS) ============================== */
+function JSAEditor({ jsa, onChange }) {
+  const [hazard, setHazard] = useState("");
+  const [mitigation, setMitigation] = useState("");
+
+  const setField = (patch) => {
+    const next = { ...jsa, ...patch };
+    onChange({ ...next, completed: isJSAComplete(next) });
+  };
+
+  const addHazard = () => {
+    if (!hazard.trim() || !mitigation.trim()) return;
+    setField({ hazards: [...jsa.hazards, { hazard: hazard.trim(), mitigation: mitigation.trim() }] });
+    setHazard(""); setMitigation("");
+  };
+  const removeHazard = (idx) => setField({ hazards: jsa.hazards.filter((_, i) => i !== idx) });
+
+  const signPengawas = (nama) => setField({ pengawasNama: nama, pengawasAt: nama ? new Date().toISOString() : "" });
+  const signSafety = (nama) => setField({ safetyNama: nama, safetyAt: nama ? new Date().toISOString() : "" });
+
+  return (
+    <div style={S.lpBox}>
+      <div style={S.lpHeader}>
+        <span style={S.fieldLabel}>JOB SAFETY ANALYSIS (JSA)</span>
+        {jsa.completed && <span style={{ ...S.lpBadge, color: "#5FA980", borderColor: "#5FA98066" }}><Check size={10} style={{ marginRight: 3, position: "relative", top: 1 }} />Lengkap</span>}
+      </div>
+
+      <div style={S.fieldLabel}>Bahaya & Mitigasi</div>
+      {jsa.hazards.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, marginBottom: 10 }}>
+          {jsa.hazards.map((h, i) => (
+            <div key={i} style={S.lpChartRow}>
+              <span style={{ fontSize: 12, color: "#C9D1D6" }}><b style={{ color: "#F2A31B" }}>Bahaya:</b> {h.hazard} — <b style={{ color: "#5FA980" }}>Mitigasi:</b> {h.mitigation}</span>
+              <button onClick={() => removeHazard(i)} style={S.memberRemoveBtn}><X size={11} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6, marginBottom: 12 }}>
+        <input value={hazard} onChange={(e) => setHazard(e.target.value)} style={{ ...S.inputSm, width: 180 }} placeholder="Bahaya (cth. beban ayun)" />
+        <input value={mitigation} onChange={(e) => setMitigation(e.target.value)} style={{ ...S.inputSm, width: 180 }} placeholder="Mitigasi (cth. tagline)" />
+        <button onClick={addHazard} style={{ ...S.submitBtn, width: "auto", padding: "9px 14px", marginTop: 0 }}><Plus size={14} /></button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <div style={S.fieldLabel}>Nama Pengawas (approve)</div>
+          <input value={jsa.pengawasNama} onChange={(e) => signPengawas(e.target.value)} style={S.inputSm} placeholder="Ketik nama" />
+          {jsa.pengawasNama && <div style={{ fontSize: 10, color: "#5C666C", marginTop: 3 }}>Disetujui {new Date(jsa.pengawasAt).toLocaleString("id-ID")}</div>}
+        </div>
+        <div>
+          <div style={S.fieldLabel}>Nama Safety Officer (approve)</div>
+          <input value={jsa.safetyNama} onChange={(e) => signSafety(e.target.value)} style={S.inputSm} placeholder="Ketik nama" />
+          {jsa.safetyNama && <div style={{ fontSize: 10, color: "#5C666C", marginTop: 3 }}>Disetujui {new Date(jsa.safetyAt).toLocaleString("id-ID")}</div>}
+        </div>
+      </div>
+      {!jsa.completed && (
+        <div style={{ ...S.lpWarn, marginTop: 10 }}><AlertTriangle size={12} /> Minimal 1 bahaya+mitigasi, dan kedua nama approval perlu diisi supaya JSA lengkap.</div>
+      )}
+    </div>
+  );
+}
+
 function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTemplate, notify, onChange }) {
   const plan = r.liftingPlan || emptyLiftingPlan();
   const pct = plan.swl && plan.beratBeban ? Math.round((parseFloat(plan.beratBeban) / parseFloat(plan.swl)) * 100) : null;
@@ -1457,7 +1610,15 @@ function LiftingPlanEditor({ r, gear, liftingTemplates, liftingLibrary, onSaveTe
           <div style={S.fieldLabel}>Alat yang dipakai</div>
           <select value={plan.alat} onChange={(e) => pickGear(e.target.value)} style={S.lpSelect}>
             <option value="">Pilih alat...</option>
-            {gear.map((g) => <option key={g.id} value={g.nama}>{g.nama}</option>)}
+            {GEAR_KATEGORI_LIST.map((kat) => {
+              const items = gear.filter((g) => (g.kategori || "Lifting Equipment") === kat);
+              if (items.length === 0) return null;
+              return (
+                <optgroup key={kat} label={kat}>
+                  {items.map((g) => <option key={g.id} value={g.nama}>{g.nama}</option>)}
+                </optgroup>
+              );
+            })}
           </select>
         </div>
         {needsBoom && (
