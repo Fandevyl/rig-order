@@ -448,6 +448,8 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
   const [gNama, setGNama] = useState("");
   const [gKap, setGKap] = useState("");
   const [gKategori, setGKategori] = useState("Lifting Equipment");
+  const [showGearBulk, setShowGearBulk] = useState(false);
+  const [gearBulkText, setGearBulkText] = useState("");
 
   const submitRigger = () => {
     if (!name.trim()) return;
@@ -459,6 +461,36 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
     if (!gNama.trim()) return;
     onAddGear({ nama: gNama.trim(), kapasitas: gKap.trim(), kondisi: "Baik", kategori: gKategori });
     setGNama(""); setGKap("");
+  };
+
+  const normalizeKondisi = (text) => {
+    const t = (text || "").toLowerCase();
+    if (t.includes("tidak layak") || t.includes("afkir")) return "Rusak";
+    return "Baik";
+  };
+
+  const importGearBulk = () => {
+    const lines = gearBulkText.split("\n").map((l) => l.trim()).filter(Boolean);
+    let count = 0;
+    for (const line of lines) {
+      const parts = line.split(/\t|\|/).map((s) => s.trim());
+      if (parts.length < 2) continue;
+      const [kat, nama, kode, kapasitas, qty, kondisiText, catatan] = parts;
+      if (!nama) continue;
+      onAddGear({
+        kategori: kat === "Lifting Gear" || kat === "Lifting Equipment" ? kat : "Lifting Gear",
+        nama,
+        kode: kode || "",
+        kapasitas: kapasitas || "",
+        qty: qty || "",
+        kondisi: normalizeKondisi(kondisiText),
+        catatan: [kondisiText, catatan].filter((x) => x && x !== "-").join(" · "),
+      });
+      count++;
+    }
+    if (count > 0) notify(`${count} alat berhasil di-import`);
+    setGearBulkText("");
+    setShowGearBulk(false);
   };
 
   const uploadFor = async (name, field, file) => {
@@ -567,13 +599,33 @@ function AnggotaManager({ riggers, profiles, onAdd, onRemove, onUpdateProfile, g
           </button>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20, maxWidth: 480, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, maxWidth: 480, flexWrap: "wrap" }}>
         <input style={{ ...S.input, flex: 2, minWidth: 160 }} value={gNama} onChange={(e) => setGNama(e.target.value)} placeholder="Nama alat" />
         <input style={{ ...S.input, flex: 1, minWidth: 100 }} value={gKap} onChange={(e) => setGKap(e.target.value)} placeholder="Kapasitas" />
         <button type="button" onClick={submitGear} style={{ ...S.submitBtn, width: "auto", padding: "9px 16px", marginTop: 0 }}>
           <Plus size={15} />
         </button>
       </div>
+
+      <button onClick={() => setShowGearBulk((s) => !s)} style={{ ...S.lpViewBtn, marginBottom: 20 }}>
+        {showGearBulk ? "Tutup import massal" : "Import banyak alat sekaligus"}
+      </button>
+      {showGearBulk && (
+        <div style={{ marginBottom: 20, maxWidth: 640 }}>
+          <div style={{ fontSize: 11, color: "#5C666C", marginBottom: 6 }}>
+            Tempel data dari Excel (kolom dipisah Tab, langsung copy-paste dari spreadsheet). Urutan kolom:{" "}
+            <span style={{ fontFamily: FONT_MONO }}>Kategori, Nama, Kode, Kapasitas, Qty, Kondisi, Catatan</span>{" "}
+            (Kode/Qty/Kondisi/Catatan boleh kosong).
+          </div>
+          <textarea
+            value={gearBulkText}
+            onChange={(e) => setGearBulkText(e.target.value)}
+            style={{ ...S.input, minHeight: 120, resize: "vertical", fontFamily: FONT_MONO, fontSize: 11.5, width: "100%" }}
+            placeholder={"Lifting Gear\tWebbing Sling 1 Ton\tWS-1T\t1000 Kg\t6\tLayak Pakai\tWarna samar"}
+          />
+          <button onClick={importGearBulk} style={{ ...S.submitBtn, width: "auto", padding: "9px 16px", marginTop: 8 }}>Import ke Daftar Alat</button>
+        </div>
+      )}
 
       {gear.length === 0 && <EmptyState text="Belum ada alat terdaftar." />}
 
@@ -682,8 +734,13 @@ function GearRow({ g, onToggleGear, onRemoveGear, onUpdateGear }) {
     <div style={S.gearRowWrap}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
-          <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}{chart.length > 0 ? ` · Load chart: ${chart.length} titik` : ""}</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>
+            {g.nama}{g.kode ? <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: "#F2A31B", marginLeft: 6 }}>{g.kode}</span> : null}
+          </div>
+          <div style={{ fontSize: 11, color: "#8B98A0" }}>
+            {g.kapasitas || "-"}{g.qty ? ` · Qty: ${g.qty}` : ""}{chart.length > 0 ? ` · Load chart: ${chart.length} titik` : ""}
+          </div>
+          {g.catatan && <div style={{ fontSize: 10.5, color: "#5C666C", marginTop: 2 }}>{g.catatan}</div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={() => setExpanded((e) => !e)} style={S.lpViewBtn}>{expanded ? "Tutup" : "Load Chart"}</button>
@@ -811,8 +868,10 @@ function TeamAndGear({ riggers, profiles, gear }) {
               {items.map((g) => (
                 <div key={g.id} style={S.memberRow}>
                   <div>
-                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>{g.nama}</div>
-                    <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}</div>
+                    <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, color: "#EDEBE4" }}>
+                      {g.nama}{g.kode ? <span style={{ fontFamily: FONT_MONO, fontSize: 10.5, color: "#F2A31B", marginLeft: 6 }}>{g.kode}</span> : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#8B98A0" }}>{g.kapasitas || "-"}{g.qty ? ` · Qty: ${g.qty}` : ""}</div>
                   </div>
                   <span style={{ ...S.gearKondisi, color: g.kondisi === "Baik" ? "#5FA980" : "#E1493F", borderColor: (g.kondisi === "Baik" ? "#5FA980" : "#E1493F") + "55" }}>
                     {g.kondisi}
