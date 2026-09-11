@@ -5,11 +5,11 @@ import { createClient } from '@supabase/supabase-js';
 
 export default async function handler(req, res) {
   try {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_KEY;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ ok: false, error: 'SUPABASE_URL atau SUPABASE_KEY belum diset' });
+      return res.status(500).json({ ok: false, error: 'VITE_SUPABASE_URL atau VITE_SUPABASE_ANON_KEY belum diset' });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
